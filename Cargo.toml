@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = ["crates/ume-core", "crates/ume-python"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Jeffrey Wong <jeff.ct.wong@gmail.com>"]
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

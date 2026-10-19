@@ -1,0 +1,103 @@
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[project]
+name = "ume"
+description = "Universal Model for Experimentation: one-pass compression, sandwich standard errors and Bayesian bootstrap posteriors."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Jeffrey Wong", email = "jeff.ct.wong@gmail.com" }]
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "narwhals>=2"]
+dynamic = ["version"]
+urls = { Documentation = "https://jeffwong.github.io/ume/", Repository = "https://github.com/jeffwong/ume", Changelog = "https://github.com/jeffwong/ume/blob/main/CHANGELOG.md" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Rust",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+
+[dependency-groups]
+dev = [
+    "maturin>=1.15,<2",
+    "pytest>=8",
+    "hypothesis>=6",
+    "ruff>=0.17",
+    "mypy>=1.10",
+    "pre-commit>=3",
+    "pandas>=2",
+    "polars>=1",
+    "linearmodels>=6",
+]
+docs = [
+    "quartodoc>=0.11",
+    "griffe<2",  # quartodoc 0.11.1 passes parser options removed in griffe 2
+    "ipykernel>=6.29",
+    "nbclient>=0.10",
+    "nbformat>=5.10",
+    "pyyaml>=6",
+]
+bench = [
+    "pytest-benchmark>=5",
+    "pytest-memray>=1.7; sys_platform != 'win32'",
+]
+
+[tool.maturin]
+manifest-path = "crates/ume-python/Cargo.toml"
+python-source = "python"
+module-name = "ume._core"
+features = ["pyo3/extension-module"]
+
+[tool.uv]
+default-groups = ["dev", "docs", "bench"]
+# Rebuild the Rust extension when Rust sources change on `uv sync` / `uv run`.
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "Cargo.toml" },
+    { file = "crates/**/Cargo.toml" },
+    { file = "crates/**/*.rs" },
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "-ra"]
+# ume's own warnings must be expected explicitly (pytest.warns) in tests.
+filterwarnings = ["error::UserWarning"]
+markers = ["slow: Monte Carlo or large-n tests (deselect with -m 'not slow')"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["python", "tests"]
+
+[tool.ruff.per-file-target-version]
+# Release tooling runs on the dev Python (3.12), not the oldest supported one.
+"scripts/**" = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "B",        # bugbear
+    "UP",       # pyupgrade
+    "SIM",      # simplify
+    "NPY",      # numpy-specific
+    "RUF",
+]
+# Math names mirror the notation (e.g. G_h, x_C), so allow non-lowercase names.
+ignore = ["N"]
+# Reports and docstrings use math notation on purpose.
+allowed-confusables = ["×", "−", "·"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+files = ["python/ume"]
+
+[[tool.mypy.overrides]]
+# pandas is optional (Table.to_pandas) and ships no type information.
+module = ["pandas", "pandas.*"]
+ignore_missing_imports = true
