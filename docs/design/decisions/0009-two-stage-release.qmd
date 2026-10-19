@@ -1,0 +1,35 @@
+---
+title: "0009 Two-stage release: verify and build, then a gated publish"
+date: 2026-10-18
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+A release has two stages, and the same stages run locally and on GitHub.
+
+| | Local | GitHub (`release.yml`) |
+|---|---|---|
+| Stage 1: verify and build | `scripts/release_check.sh`: version, changelog and tag checks, lint, tests, docs, sdist and a wheel for this machine, metadata check, tests against the installed wheel, `dist/release-manifest.txt` (commit and SHA-256) | Same checks, plus wheels for every platform, tests on the built wheels on three operating systems, and a run summary with checksums |
+| Gate | Inspect `dist/` and the docs, then type the version to confirm | Required reviewers on the `testpypi` / `pypi` environment |
+| Stage 2: publish | `scripts/release_publish.sh` refuses to run unless HEAD, the tree and `dist/` match the manifest; `uv publish`; for PyPI, tag and trigger the docs workflow | Trusted publishing (OIDC); for PyPI, tag and deploy the docs |
+
+`scripts/release_version.py check` is shared by both paths: the Cargo version is SemVer, `CHANGELOG.md` has its section and nothing left under `Unreleased`, and the tag does not exist yet.
+
+## Alternatives
+
+- Publish on every tag push. One step, but nothing between "tests pass" and "the package is public", and a mistyped tag publishes.
+- A single script with a `--dry-run` flag. Easy to forget the flag, and the dry run would not produce the exact files that get uploaded.
+
+## Justification
+
+- Requested by Jeffrey Wong: publishing must be deliberate, with a chance to inspect.
+- **What you inspect is what ships.** Stage 2 uploads the files stage 1 built, checked by hash, never a rebuild.
+- The release is triggered by hand (`workflow_dispatch`), not by a tag push. The workflow creates the tag only after a successful PyPI upload, so a tag always means a published version, and the local and CI paths cannot both fire for the same tag.
+- TestPyPI is the default target in both paths.
+- The docs have one deploy path, `docs.yml` (GitHub Pages through Actions), which the release calls. Two mechanisms (a `gh-pages` branch and Actions) cannot both be the Pages source.
+
+## Open
+
+- The name `ume` is already taken on PyPI by an unrelated project. See the [TODO](../todo.qmd).

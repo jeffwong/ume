@@ -1,0 +1,18 @@
+---
+title: "0022 One abi3 wheel per platform"
+date: 2026-10-18
+status: accepted
+basis: evidence
+---
+
+## Decision
+
+The extension is built against Python's stable ABI (PyO3 feature `abi3-py310`). Each platform gets one wheel, `cp310-abi3`, that works on every Python from 3.10 up. The release workflow builds one wheel per platform instead of one per Python version. This supersedes the per-version wheels of [0007](0007-toolchain-versions.qmd).
+
+## Evidence
+
+0007 left this open: it was not known whether rust-numpy works under abi3. It does. An abi3 wheel built with maturin passed the full test suite (240 tests) in clean environments on Python 3.10.22 and 3.13.16.
+
+## Costs
+
+The stable ABI rules out some CPython fast paths at the boundary. ume's boundary is one call per batch or fit, with arrays passed by pointer, so the cost is negligible; the benchmarks did not change.

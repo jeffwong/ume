@@ -1,0 +1,25 @@
+---
+title: "0008 Changelog format and versioning"
+date: 2026-10-18
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+`CHANGELOG.md` follows [Semantic Versioning](https://semver.org). Each release lists its changes under four headings, in this order:
+
+1. Breaking changes
+2. New features
+3. Bug fixes
+4. Performance
+
+The "Performance" heading is for significant optimizations, with the measured before and after numbers and a pointer to the benchmark.
+
+Work in progress goes under `## Unreleased` and is renamed to the version number at release.
+
+## Justification
+
+The four headings were chosen by Jeffrey Wong. Putting breaking changes first tells a user immediately whether upgrading is safe. Performance gets its own heading because, for this library, speed and memory are features (decision [0006](0006-benchmarks-memray.qmd)).
+
+Before 1.0.0, a breaking change bumps the minor version (0.1 → 0.2) and anything else bumps the patch version, as SemVer allows for `0.y.z`.

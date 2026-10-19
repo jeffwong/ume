@@ -1,0 +1,417 @@
+---
+title: "API and engine plan (proposal)"
+description: "From a dataframe to effects: the user's session, the types, the single engine, the effect taxonomy, and the test plan."
+date: 2026-10-18
+status: proposal
+---
+
+::: {.callout-warning}
+## Status: approved; milestones 1 to 5 built
+All decisions of section 8 are made (records [0010](decisions/0010-experiment-wrapper.qmd)–[0016](decisions/0016-weights-without-cohort.qmd)). Milestone 1 was reordered at Jeffrey's request: it builds the **Rust primitives and the row-level fit** under the Python API (organize first), and leaves compression and single-pass kernels to milestone 2. Milestone 2 added the one-pass compressor and the fit from compressed data, with exact merge and contiguity checks ([0017](decisions/0017-compression.qmd)). Milestone 3 added Philox weight streams ([0018](decisions/0018-philox-weight-streams.qmd)), the exact Bayesian, Poisson and classical bootstraps, and the Gaussian posterior ([0019](decisions/0019-gaussian-engine-small-strata.qmd)). Milestone 4 added the linearized standard error and delta vectors early ([0020](decisions/0020-linearized-se-and-two-passes.qmd)); the first-stage diagnostics were built in milestone 1. Milestone 5 added threads, lazy frames and streams of batches, and the storage format, without a Spark or map-reduce translation ([0021](decisions/0021-scale.qmd)). See [One engine](engine.qmd). Each confirmed decision becomes a record in [Decisions](decisions/index.qmd). Two items here are **new derivations** (marked ⚑). Per the working agreement, they are explained here first and are not coded without an explicit yes.
+:::
+
+Sources: the research handoff (`LIBRARY_HANDOFF.md`), the [conditionally sufficient statistics post](https://jeffwong.github.io/posts/conditionally_sufficient_statistics/) (CSS), the [Bayesian universal model post](https://jeffwong.github.io/posts/bayesian_universal_model/) (BUM), the [bootstrap post](https://jeffwong.github.io/posts/bootstrap/), and [What is an average?](https://jeffwong.github.io/posts/what_is_an_average/).
+
+# 1. Dogfooding: one session, as the user
+
+Before designing types, we write the session we want to have. The data is the running example of the posts: one row per profile, accounts randomized to a prompt, a four-day ramp, hours and rebuffers per play. *All printed numbers below are mockups.* Where a number appears in the handoff's regression table it is copied from there; the rest are placeholders.
+
+## 1.1 Annotate the dataframe
+
+```python
+import polars as pl
+import ume
+
+df = pl.read_parquet("profiles.parquet")      # pandas works the same way
+
+exp = ume.annotate(
+    df,
+    cluster="account",                        # unit of randomization and of independence
+    instrument="Z",                           # randomized assignment (the prompt)
+    treatment="T",                            # treatment received; omit it for an AB test (T = Z)
+    cohort="day",                             # propensity cells; omit for a constant propensity
+    covariates=ume.covariates(
+        x1=2.0, x2=2.0, kids=0,               # numeric covariate = its reference point x_ref
+        device=ume.categorical(reference="tv"),
+    ),
+)
+exp
+```
+
+```
+<ume.Experiment: 43,989 rows × 14 columns, polars>
+  cluster     account     20,000 clusters, 1–5 rows each (clustered)
+  instrument  Z           randomized assignment
+  treatment   T           received treatment ≠ Z (encouragement design)
+  cohort      day         4 cohorts, propensity of Z=1 from 0.05 to 0.50 (adaptive)
+  covariates  x1 (x_ref=2), x2 (x_ref=2), kids (x_ref=0), device[mobile, web] (ref=tv)   k = 5
+  metrics     none yet — add with .metrics(...)
+```
+
+`exp` is still a dataframe. Every dataframe method passes through, and frames that keep the annotated columns come back annotated:
+
+```python
+exp.filter(pl.col("day") > 1)                 # an Experiment over days 2–4
+exp.group_by("day").agg(pl.col("y").mean())   # aggregates return a plain polars frame
+exp.frame                                     # the native frame, unwrapped
+```
+
+## 1.2 Declare the metrics
+
+```python
+exp = exp.metrics(
+    ume.mean("y", name="hours"),
+    ume.ratio("N", "D", name="rebuffers_per_play"),
+)
+exp.outcome_columns
+```
+
+```
+outcome columns (o = 5), derived from the metrics:
+  y            hours                       (mean)
+  N, D         rebuffers_per_play          (ratio: numerator, denominator)
+  TN, TD       rebuffers_per_play          (T·N, T·D: the compliers' own levels, built automatically)
+```
+
+The user never builds `TN` or `TD` by hand. The library derives the outcome columns from the metrics (Section 4.2).
+
+## 1.3 Compress
+
+```python
+cd = exp.compress()
+cd
+```
+
+```
+<ume.CompressedData: 8 strata = 2 arms × 4 cohorts, from 43,989 rows in 20,000 clusters>
+  layout     distinct, q = 72 (d = 6, o = 5), x_ref recorded
+  stratum      Z  day   G_h    rows   e_hat
+  0            0    1   7639   …      0.051
+  …
+  7            1    4   1011   …      0.508
+  design     clustered encouragement design with adaptive assignment (4 cohorts); ratio and mean metrics
+```
+
+`cd` is a mapping from strata to their sufficient statistics, so it reads like a dictionary:
+
+```python
+cd.keys()                       # [Stratum(Z=0, day=1), …]
+row = cd[ume.Stratum(Z=1, day=1)]
+row.G                           # 412
+row.first_moments               # Σ_a v_a, labelled by entry: ("S^Y", "1", "y"), …
+row.second_moments              # Σ_a v_a v_aᵀ (labelled square matrix)
+row.blocks()                    # S^Y (d×o), S (d×d), S^T (d×d) as labelled frames
+cd.to_dict()                    # plain dict of numpy arrays plus metadata, for storage
+cd + other_shard                # merging adds the fields; strata and x_ref must match
+```
+
+## 1.4 Fit the universal model
+
+```python
+fit = cd.fit()
+fit
+```
+
+```
+                         Universal model: weighted 2SLS
+==========================================================================
+Outcomes:      y, N, D, TN, TD              Rows:            43,989
+Instruments:   1, x, Z, Z·x   (2d = 12)     Clusters:        20,000
+Regressors:    1, x, T, T·x   (2d = 12)     Strata:          8 (Z × day)
+Weights:       inverse propensity by day    Covariance:      CR0, clustered by account
+--------------------------------------------------------------------------
+First stage (endogenous regressor ~ instruments)
+                  partial R²   robust F(6, 19999)   compliance (T|Z=1 − T|Z=0)
+T                   0.…           …                  0.…
+T·x1                0.…           …
+…
+--------------------------------------------------------------------------
+Outcome: y (hours)
+                coef     std err       z      P>|z|     [0.025    0.975]
+Intercept       …
+x1              …
+…
+T               …
+T:x1            …
+…
+==========================================================================
+4 more outcomes: fit.summary("N"), …; fit.coef, fit.cov, fit.first_stage
+```
+
+`fit.coef` is the $2d \times o$ matrix $\hat\beta$ as a labelled frame. `fit.cov` is the covariance of $\text{vec}(\hat\beta)$. `fit.first_stage` holds $\hat\Gamma$ and its diagnostics.
+
+## 1.5 Effects
+
+```python
+eff = fit.effects()
+eff
+```
+
+```
+Effects (compliers; clustered encouragement design, adaptive)       se: sandwich (CR0)
+  compliance rate   π_C = 0.…        compliers' mean x̄_C: x1 = …, x2 = …, kids = …, mobile = …, web = …
+metric               estimand      contrast     estimate    std err   [0.025   0.975]
+hours                LATE          difference     0.6639     0.0572     …        …
+rebuffers_per_play   LATE          difference    −0.02548    0.00410    …        …
+rebuffers_per_play   LATE          relative      −0.3378     …          …        …
+```
+
+The other questions the posts answer are one call each:
+
+```python
+fit.effects(at={"kids": 1, "x1": 1.0})                    # segment: read the lines at x0
+fit.effects(slopes=True)                                  # β_1x, the heterogeneity
+fit.compliers()                                           # π_C, x̄_C vs population mean, arm shares
+fit.itt()                                                 # intent to treat effect of each raw outcome
+```
+
+## 1.6 Bootstrap and posteriors
+
+```python
+post = cd.posterior(B=1000, seed=1)                       # Gaussian engine: no new pass over rows
+post.effects()                                            # posterior mean, sd, quantiles per effect
+post.prob(lambda e: e["rebuffers_per_play", "relative"] < -0.10)
+
+exact = exp.bootstrap(B=1000, weights="bayesian", seed=1)  # one new pass over the rows, exact
+exp.bootstrap(B=1000, weights="poisson", seed=1)
+exp.bootstrap(B=1000, weights="multinomial", seed=1)       # classical bootstrap of clusters
+fit.effects(se=exact)                                     # standard errors from bootstrap draws
+```
+
+**Where a method lives tells you its cost.** Methods on `CompressedData` and `UniversalFit` never touch rows. Methods on `Experiment` make a pass over the rows.
+
+## 1.7 What dogfooding changed
+
+Writing the session first changed four things:
+
+1. **`TN` and `TD` must be derived, not typed.** Building them by hand is the most error-prone step in the posts, and the CSS Monte Carlo shows that getting it wrong biases $\tau_R$.
+2. **The design is detected, not declared.** The user names columns; the library reports "clustered encouragement design with adaptive assignment" and the estimand (LATE or ATE). This is the taxonomy of Section 4, printed.
+3. **Every object prints.** In a notebook you look at `cd`, `row.blocks()`, `fit`, `eff` and `post` before you trust them. Each type gets a text `__repr__` and an HTML `_repr_html_`.
+4. **The bootstrap belongs to rows, the Gaussian posterior to the compressed data.** Putting them on different objects makes the cost visible and stops anyone from "bootstrapping the compressed rows", which BUM shows is wrong.
+
+# 2. Types
+
+| Type | Holds | Made by | Key methods |
+|---|---|---|---|
+| `Covariates`, `Categorical` | Names, $x_{ref}$, levels and reference level | `ume.covariates(...)`, `ume.categorical(...)` | — |
+| `Design` | Column roles, covariates, metrics. Pure data, frame-independent, serializable. | `ume.design(...)`, or inside `annotate` | `.bind(df)`, `.to_dict()` |
+| `Metric` (`Mean`, `Ratio`) | Columns and name | `ume.mean`, `ume.ratio` | `.outcome_columns(encouraged)` |
+| `Experiment` | A native frame plus its `Design` | `ume.annotate(df, ...)`, `design.bind(df)` | dataframe methods (delegated), `.metrics`, `.compress`, `.bootstrap` |
+| `Stratum` | $(Z, \text{cohort})$ | — | — |
+| `CompressedRow` | $G_h$, $\sum_{a\in h} v_a$, $\sum_{a\in h} v_a v_a^\top$ (distinct layout) | `CompressedData[h]` | `.blocks()`, labelled views |
+| `CompressedData` | `Mapping[Stratum, CompressedRow]`, `Layout`, `Design`, row and cluster counts | `exp.compress()`, `Compressor.finish()` | `.fit`, `.posterior`, `+`, `.to_dict`, `.from_dict` |
+| `Compressor` | Mergeable streaming state, in Rust | `ume.Compressor(design)` | `.update(batch)`, `.merge(other)`, `.finish()` |
+| `UniversalFit` | $\hat\beta$, $\widehat{\text{Cov}}(\text{vec}\,\hat\beta)$, $A = M_1^\top W M_2$, $\hat e$, $\bar x_C$, first stage | `cd.fit()` | `.summary`, `.coef`, `.cov`, `.first_stage`, `.effects`, `.compliers`, `.itt` |
+| `Effect` | A function of the complier levels (Section 4.3) | `ume.effects.*`, or user-defined | — |
+| `EffectTable` | Estimates, standard errors, intervals, method | `fit.effects(...)` | `.to_frame()` |
+| `Draws` (`Posterior`, `Bootstrap`) | $B$ draws of $\beta$, $\bar x_C$, $\hat e$; the weight scheme and seed | `cd.posterior`, `exp.bootstrap` | `.effects`, `.prob`, `.quantile`, `.to_frame` |
+
+**Dataframe integration** (Decision 1). `Experiment` wraps the native frame by composition. It forwards attribute access with `__getattr__`. A returned frame that still contains every annotated column is re-wrapped with the same `Design`; anything else (aggregates, group-bys, frames with missing columns) is returned native. One class cannot inherit from both pandas and polars, and polars discourages subclassing, so composition is the only way to "keep the dataframe operations" for both. Frame-agnostic column access goes through [narwhals](https://narwhals-dev.github.io/narwhals/), a dependency-free compatibility layer for pandas, polars and others.
+
+# 3. One engine
+
+## 3.1 The generalization
+
+Every number the library reports comes from one function of per-stratum weighted sums:
+
+$$\texttt{fit\_sums}:\ \Big\{\textstyle\sum_{a\in h}\xi_a v_a\Big\}_{h} \ \longmapsto\ \big(\hat e(\xi),\ \beta(\xi),\ \bar x_C(\xi),\ A(\xi),\ \text{first stage}(\xi)\big), \qquad v_a = (1, u_a).$$
+
+The methods differ only in what they feed it:
+
+| Method | Weights $\xi_a$ | Input to `fit_sums` | Pass over rows |
+|---|---|---|---|
+| Point estimate | $\xi \equiv 1$ | $\sum_h v_a$ (first field of the compressed row) | the compression pass |
+| Sandwich (CR0/HC0) | — | point estimate, plus $\sum v_a v_a^\top$ through $L(\hat\beta)$ | none extra |
+| Bayesian bootstrap, exact | Exp(1) | $B$ weighted sums built during a pass | 1 |
+| Poisson bootstrap, exact | Poisson(1) | same | 1 |
+| Classical bootstrap of clusters | Multinomial$(G; 1/G)$ | same | 1 (unsharded, see 3.4) |
+| Gaussian posterior | $N(1, 1)$ multiplier (exact identity) | $N(\sum v_a, \sum v_a v_a^\top)$ per stratum | none |
+
+With $\xi \equiv 1$, `fit_sums` reproduces the point estimate exactly; this is a mandatory test. The design features do not branch the engine:
+
+- encouragement on or off is the data ($S^T = Z\,S$ when $T = Z$);
+- clusters on or off is the data (one row per cluster gives HC0);
+- an adaptive ramp is the cohort key (a single cohort makes the weights constant, and they cancel);
+- ratio or mean is the outcome layout (Section 4.2).
+
+## 3.2 Rust / Python split
+
+| Rust (`ume-core`, exposed through `ume._core`) | Python (`ume`) |
+|---|---|
+| `Compressor`: buffer-and-flush over row batches, distinct layout, skips zeros, open-cluster buffer carried across batches, contiguity check, `merge` | Annotation, `Design`, metrics → outcome layout, frame conversion (narwhals → contiguous float64 / int64 numpy) |
+| `BootstrapCompressor`: $B \times (1+q)$ per stratum, contiguous over $b$, `axpy` per nonzero entry | Effect grammar (Section 4.3), complex-step gradients vectorized over draws |
+| Counter-based weight streams (Decision 4) | Reports: `__repr__`, `_repr_html_` |
+| `fit_sums`, batched over draws, parallel with a capped thread pool | The `Mapping` and `Draws` views, serialization |
+| Sandwich: $L(\hat\beta)$, $P_Z$, meat from second moments | Reference row-level implementation for tests (`ume.testing`) |
+| Gaussian draws: symmetric eigendecomposition with clamped eigenvalues | Simulator (`ume.testing.simulate_accounts`) |
+
+Effects stay in Python: they are functions of $2do$ numbers, vectorized over $B$, and user-defined effects must be plain Python. Everything that loops over rows or over draws of $2d \times 2d$ solves is in Rust.
+
+## 3.3 Ingestion details that matter
+
+- **Cluster keys.** Weights must not depend on row order or sharding, so the weight stream is keyed by a 64-bit hash of the *original* cluster id (int or string), not by a factorized index.
+- **Contiguity.** Rows must arrive grouped by cluster. Within one `Compressor`, a cluster id that reappears after its flush raises an error (it keeps a set of flushed ids). Across shards, each shard records its first and last cluster id, so `merge` catches the common split-at-the-boundary case. Splits elsewhere still need a pre-shuffle by cluster, and the docs say so.
+- **$x_{ref}$.** Fixed before the pass and stored in the metadata. In memory, if the user does not give one, `annotate` uses the column means from a cheap pre-scan and records them. Streaming requires an explicit $x_{ref}$. Merging compressed data with different $x_{ref}$ is an error.
+- **Categorical levels** must be known before the pass. They are inferred in memory and must be declared for streaming. A level never seen in a shard is still a column of the layout.
+- **Missing values** are not researched. Version 1 raises an error on nulls in any role column.
+
+## 3.4 The three exact bootstraps
+
+All three are "the universal model refit with one more weight per cluster" (BUM, bootstrap post). The weight goes on the cluster, never the row. The propensity is recomputed in each draw (BUM 4.2).
+
+- **Bayesian**: $\xi_a \sim$ Exp(1), from the counter-based stream (seed, cluster key, $b$).
+- **Poisson**: $\xi_a \sim$ Poisson(1), from the same stream. A stratum can draw a total weight of 0, which makes $\hat e$ undefined in that draw. Version 1 reports the number of such draws and drops them, with a warning. This needs a decision if it matters in practice; it cannot happen with Exp(1).
+- **Classical** (multinomial over the $G$ clusters): the counts are coupled, so they cannot come from a per-cluster stream. In a single ordered pass with $G$ known (from a previous compression), draw $c_i \sim \text{Binomial}(G - \sum_{j<i} c_j,\ 1/(G-i+1))$ for $i = 1..G$. This is the standard sequential method and costs $O(B)$ per cluster. It cannot be sharded. That is a property of the classical bootstrap, and is why the Poisson bootstrap exists.
+
+# 4. Taxonomy: designs, estimands, effects
+
+## 4.1 The design is read from the annotation and the data
+
+| Feature | Comes from | Detected by | Touches |
+|---|---|---|---|
+| Encouragement | `instrument` ≠ `treatment` | some stratum has $S^T_h \ne Z_h S_h$ | first stage, estimand |
+| Clusters | `cluster` | rows > clusters | the meat (CR0 vs HC0) |
+| Adaptive assignment | `cohort` | $\hat e$ differs across cohorts | weights |
+| Ratio metric | `ume.ratio` | metric spec | outcome columns |
+| Covariates | `covariates` | $k > 0$ | the lines |
+
+The printed name concatenates the features ("clustered encouragement design with adaptive assignment"). An AB test with Lin regression is the design with everything off except covariates.
+
+## 4.2 Metrics: a mean is a ratio with denominator 1
+
+Following CLAUDE.md's "this is a special case of the general form": the general metric is a ratio $N/D$, and a mean metric is the special case $D \equiv 1$ (handoff 3.2).
+
+- `ratio(N, D)` contributes the outcome columns $N, D, T\!\cdot\!N, T\!\cdot\!D$.
+- `mean(y)` contributes $y$ and $T\!\cdot\!y$. Its $D \equiv 1$ columns are known in closed form, so no columns are stored for them: the treatment line of the constant is 0, and the treatment line of $T$ is exactly 1 (an outcome equal to a regressor is fitted exactly).
+- Columns shared between metrics are stored once.
+
+The $T\!\cdot\!y$ column is new relative to the posts. It is what lets a mean metric report the compliers' levels $E[y(1)\mid C]$ and $E[y(0)\mid C]$, and so a **relative** effect, by the same argument the CSS post makes for $TN$ (CSS appendix, "the same steps apply"). Cost: one outcome column per mean metric. It can be switched off (`ume.mean("y", levels=False)`), in which case only the difference is available.
+
+## 4.3 Effects: a grammar of three choices
+
+Write $\mu_t(Y; x_0)$ for the compliers' mean of outcome column $Y$ under treatment $t$, read on the lines at $x_0$:
+
+$$\mu_1(Y; x_0) = \delta(x_0)^\top \hat\beta_{TY}, \qquad \mu_0(Y; x_0) = \delta(x_0)^\top(\hat\beta_{TY} - \hat\beta_Y), \qquad \delta(x_0) = (0_d, 1, x_0 - x_{ref}).$$
+
+Every effect in the posts is **contrast ∘ statistic ∘ population**:
+
+| Choice | Options | Formula |
+|---|---|---|
+| statistic | mean, ratio | $m_t = \mu_t(y)$, or $\mu_t(N)/\mu_t(D)$ |
+| contrast | difference, relative | $m_1 - m_0$, or $m_1/m_0 - 1$ |
+| population | the compliers ($x_0 = \bar x_C$, the default), or a segment ($x_0$ given) | |
+
+Checks against the posts:
+
+- mean, difference, compliers: $\mu_1(y) - \mu_0(y) = \delta^\top\hat\beta_y = \tau_{LATE}$.
+- ratio, difference, compliers: $\tau_R = \frac{\ell_{TN}}{\ell_{TD}} - \frac{\ell_{TN}-\ell_N}{\ell_{TD}-\ell_D}$.
+- ratio, relative, compliers: $\rho_R$.
+
+Slopes ($\beta_{1x}$) are reported separately. The estimand label is **LATE** under encouragement and **ATE** without it, because then every row is a complier and $\bar x_C$ is the weighted mean of $x$.
+
+Also reported, all from first moments:
+
+- the **compliance rate** $\pi_C = E_w[T\mid Z=1] - E_w[T\mid Z=0]$, with always-takers $E_w[T\mid Z=0]$ and never-takers $1 - E_w[T\mid Z=1]$ under monotonicity;
+- $\bar x_C$ next to the population mean;
+- the **ITT** of each raw outcome, the weighted difference in arm means. It is the numerator of the Wald ratio, and the effect of the assignment itself (*What is an average?*).
+
+These are averages over **rows**, not clusters: a compliance rate of 40% means 40% of profile rows. The report says so.
+
+User-defined effects get the same building blocks:
+
+```python
+ume.effect("plays_per_hour", lambda m: m.mu1("D") / m.mu1("y") - m.mu0("D") / m.mu0("y"))
+```
+
+The function receives arrays, so it is vectorized over draws for free. Standard errors use complex-step gradients with respect to $\text{vec}(\hat\beta)$, as in CSS, which needs the function to be written with numpy operations. The docs say so, and a test compares the gradients with finite differences.
+
+## 4.4 Uncertainty
+
+| `se=` | Meaning | Holds $\hat e$, $\bar x_C$ fixed? | Status |
+|---|---|---|---|
+| `"sandwich"` | $\sqrt{g^\top \widehat{\text{Cov}}\, g}$, CR0 (HC0 when unclustered) | yes | CSS, verified against estimatr |
+| `"linearized"` ⚑ | gradient with respect to the stratum sums at $\xi = 1$, then $\sum_h c_h^\top(\sum v v^\top) c_h$ | no | handoff 8: verified in research (0.0585 vs 0.0583), in neither post |
+| a `Draws` object | standard deviation of the effect over the draws | no | BUM |
+
+Default: Decision 3.
+
+## 4.5 First-stage strength ⚑ (new derivation, needs a yes)
+
+A 2SLS report should show first-stage strength. The first stage regresses each endogenous regressor $(T, T x_j)$ on the instruments $m_1 = (1, x, Z, Zx)$.
+
+- **Coefficients.** $M_1^\top W M_1$ has blocks $\sum_h w_h \begin{pmatrix} S & Z S\\ Z S & Z S\end{pmatrix}$, because $Z^2 = Z$, and the first-stage "outcomes" $\sum_p m_{1,ap}(T_{ap}, T_{ap}x_{ap})$ are $\begin{pmatrix} S^T_a \\ Z_a S^T_a\end{pmatrix}$. So $\hat\Gamma$ comes from first moments alone.
+- **Cluster-robust covariance.** The first-stage residual sums of cluster $a$ are $S^T_a - S_a\hat\Gamma_0 - Z_a S_a \hat\Gamma_1$. They are **linear in $u_a$**, just like $E_a$ in CSS. So the cluster-robust covariance of $\hat\Gamma$ follows from $\sum v_a v_a^\top$ with an $L$-type matrix, exactly as the second-stage sandwich does.
+- **Report.** Per endogenous regressor: partial $R^2$, and the cluster-robust Wald F of the excluded instruments $(Z, Zx)$.
+
+This has not been checked against a textbook implementation. The plan is to verify it against `linearmodels` first-stage diagnostics and estimatr on the 16 designs before it ships. With $d$ endogenous regressors, per-equation F statistics can overstate strength. The Sanderson–Windmeijer conditional F is the standard fix, and it is a TODO, not version 1.
+
+# 5. Naming
+
+One name per meaning; code mirrors the math. Role names are generic, because the library is not about streaming accounts (Decision 2). The posts' vocabulary maps one to one:
+
+| Math | Meaning | Python | Rust | Post vocabulary |
+|---|---|---|---|---|
+| $a$ | cluster: unit of randomization and of independence | `cluster` (role), `G` (count) | `cluster` | account |
+| $(a, p)$ | one input row | row | `row` | profile row |
+| $u_a$, $v_a = (1, u_a)$ | per-cluster sums (never stored) | cluster summary | `u`, `v` | account summary |
+| $h = (Z, \text{cohort})$ | stratum | `Stratum` | `stratum` | stratum |
+| $G_h$, $\sum v_a$, $\sum v_a v_a^\top$ | compressed row | `CompressedRow.G`, `.first_moments`, `.second_moments` | `g`, `first`, `second` | compressed row |
+| — | all compressed rows | `CompressedData` | — | compressed dataset |
+| $Z_a$ | instrument | `instrument` | `z` | prompt |
+| $T_{ap}$ | treatment received | `treatment` | `t` | — |
+| $\hat e_c$, $w_a$ | propensity of cohort $c$, inverse propensity weight | `e_hat`, `w` | `e_hat`, `w` | — |
+| $x$, $x_{ref}$, $k$, $d$ | covariates, reference point, count, $k+1$ | `covariates`, `x_ref`, `k`, `d` | same | — |
+| $o$, $q$ | outcome columns, length of $u_a$ | `o`, `q` | same | — |
+| $\hat\beta$ | $2d \times o$ coefficients | `beta` (`fit.coef` is its labelled view) | `beta` | $B$ in CSS |
+| $\hat\Gamma$ | first-stage coefficients | `gamma` | `gamma` | — |
+| $\bar x_C$, $\pi_C$ | compliers' mean, compliance rate | `x_C`, `pi_C` | `x_c`, `pi_c` | — |
+| $\delta(x_0)$, $\mu_t$ | delta vector, compliers' level | `delta`, `mu1`, `mu0` | — | $\ell$ |
+| $\xi_a^{(b)}$, $B$ | bootstrap weight, number of draws | `xi`, `B` | `xi`, `b_draws` | — |
+
+`B` is never the coefficient matrix. `Z` is never a design matrix.
+
+# 6. Test plan
+
+Language-independent invariants (handoff section 7), with the milestone that makes each one pass:
+
+| # | Invariant | How | Milestone |
+|---|---|---|---|
+| 1 | Compressed equals rows; rows equal the textbook | 16 designs: Rust engine = Python reference `fit_rows` to 1e-10; reference = `linearmodels.IV2SLS` / statsmodels WLS (weights, clustered, no small-sample correction; CR0 equivalence to verify) | M1 (rows), M2 (compressed) |
+| 2 | Merge | shards compressed separately and added = all at once; hypothesis property tests over random shard splits; a cluster split across a boundary raises | M2 |
+| 3 | Identity draw | $\xi \equiv 1$ reproduces the point estimates exactly | M2 |
+| 4 | Exact one pass equals rows | kernel draws = reference `draw_rows` with the same weights, to 1e-12 | M3 |
+| 5 | Weight streams | deterministic across runs and shard orders; mean ≈ 1, var ≈ 1, third central moment ≈ 2 for Exp(1); Poisson and multinomial moments | M3 |
+| 6 | Moments identity | empirical mean and covariance of $\sum \xi_a v_a$ → (first, second) | M3 |
+| 7 | Linearization | posterior SD ≈ sandwich SE in the 8 BUM designs, within Monte Carlo noise ($1/\sqrt{2(B-1)}$) | M3 |
+| 8 | Delta vectors early = at the end | same SEs to rounding | M4 |
+
+Plus:
+
+- **API tests:** annotation round trips for pandas and polars, delegation and re-wrapping, error messages for missing columns, nulls and non-contiguous clusters.
+- **Golden reports:** snapshot tests of `repr(fit)`.
+- **Regression numbers:** the handoff's numbers (LATE 0.6639, SE 0.0572, …) come from R's RNG and cannot be reproduced in Python ([0013](decisions/0013-python-only-oracle.qmd)). We record our own from the Python simulator with fixed seeds, and check that they are consistent with the handoff's (same truth, SE/SD and coverage within Monte Carlo error).
+- **Calibration** (1,000 Monte Carlo replications): `@pytest.mark.slow`, run by hand. It reports bias with its Monte Carlo SE, SE/SD and coverage, against the handoff's calibration table.
+- **Benchmarks:** the handoff's performance table (1M clusters, 2.19M rows, $k = 5$, $o = 5$, $B = 1000$) becomes `benchmarks/`, with memray budgets: no stored cluster summaries, and state size $H(q+1)(q+2)/2$.
+
+# 7. Milestones
+
+| | Scope | Done when |
+|---|---|---|
+| **M1** Reference and API shell | `Design`, `annotate`, `Experiment` (delegation), metrics → outcome layout; numpy reference (`fit_rows`, `complier_mean`, effects grammar, complex-step gradients, `draw_rows`) in `ume.testing`; Python simulator | invariant 1 on rows (16 designs vs linearmodels and closed forms); effects grammar reproduces $\tau_{LATE}$, $\tau_R$, $\rho_R$ |
+| **M2** Rust compression and fit | `Compressor` (batches, distinct layout, merge, contiguity checks), `CompressedData` types and printing, Rust `fit_sums` and sandwich, `UniversalFit` report (without the first-stage F until 4.5 is approved), `EffectTable` | invariants 1, 2, 3; golden reports |
+| **M3** Weights and draws | counter-based streams; exact Bayesian, Poisson and classical engines; Gaussian engine; `Draws` | invariants 4–7; calibration table within Monte Carlo error |
+| **M4** Extensions behind yeses | first-stage diagnostics ⚑, linearized SE ⚑, delta vectors early | invariant 8; each verified before shipping |
+| **M5** Scale | polars LazyFrame streaming in batches, Spark/map-reduce recipe, storage format, benchmarks vs the handoff table | performance within the handoff's numbers |
+
+Each milestone ends with docs: reference entries for its public functions, one article (M1: "Annotating an experiment"; M2: "From rows to effects"; M3: "Posteriors and bootstraps"), a CHANGELOG entry and decision records.
+
+# 8. Decisions needed
+
+1. ✅ **Dataframe integration** — decided: wrapper ([0010](decisions/0010-experiment-wrapper.qmd)). Recommended: an `Experiment` wrapper with delegation, over narwhals (Section 2). Alternatives: a `df.ume` accessor/namespace (pandas `attrs` do not survive many operations, and polars frames carry no metadata), or no wrapper (`design.compress(df)`). The wrapper and `design.compress(df)` can coexist; the wrapper is a thin layer over the `Design`.
+2. ✅ **Vocabulary** — decided: generic ([0011](decisions/0011-generic-vocabulary.qmd)). Recommended: generic role names (`cluster`, `instrument`, `treatment`, `cohort`; "cluster summary"), with the posts' terms (account, profile row, account summary) mapped in the docs. Alternative: keep account/profile in the API.
+3. ✅ **Default uncertainty** — decided: sandwich ([0012](decisions/0012-default-se-sandwich.qmd)). Recommended for version 1: `"sandwich"`, which matches textbook 2SLS and estimatr and is the only fully verified option. Switch the default to `"linearized"` after its derivation is written up and approved (M4). Alternatives: linearized now, or a Gaussian posterior.
+4. **Engine internals.**
+   - Linear algebra in Rust: recommended **faer** (pure Rust, fast, no BLAS/LAPACK to package) over nalgebra, or ndarray-linalg, which needs a system LAPACK and complicates wheels.
+   - RNG: recommended **Philox4x32-10**, implemented in-crate against the Random123 test vectors, with the key = (seed, cluster-key hash) and the counter = (draw $b$, stream index). Then $b$ is unbounded, and there is no collision at $b \ge 1000003$ as in the research hash.
+5. ✅ **Validation harness** — decided: Python only, no R fixtures ([0013](decisions/0013-python-only-oracle.qmd)). The recommendation was: the Python reference plus `linearmodels` in CI, **and** a one-time R export of the CSS dataset with estimatr outputs as fixtures, for the exact regression numbers. Alternative: call R from the test suite (heavier CI).
+6. **⚑ Approvals.** May I write up and then implement (a) the cluster-robust first-stage diagnostics from compressed data (4.5) and (b) the linearized SE that includes $\hat e$ and $\bar x_C$ (4.4)? Neither is in the posts; both are planned for M4, so this can wait.

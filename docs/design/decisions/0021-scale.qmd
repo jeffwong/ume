@@ -1,0 +1,31 @@
+---
+title: "0021 Scale: threads by cluster hash, streaming sources, and the storage format"
+date: 2026-10-18
+status: accepted
+basis: evidence
+---
+
+## Decisions
+
+1. **Threads.** Every pass is a `ParallelPass`: rows go to `min(4, cores)` workers by a hash of their cluster key, and the workers' folds merge at the end (`Merge`). The thread count comes from `ume.set_threads()`, else `UME_THREADS`, else `min(4, cores)`. Per-draw fits are split over the same number of threads. The multinomial bootstrap always runs on one worker, because its counts are coupled.
+2. **Sources.** Passes read a `Source`, which guarantees a resolved design and rows grouped by cluster:
+   - a frame in memory is sorted if needed;
+   - a polars `LazyFrame` is resolved with one aggregation, sorted lazily (unless `presorted=True`), and streamed with `collect_batches`;
+   - an iterable of batches needs a fully declared design (`ume.design`) and grouped rows.
+3. **Storage.** `CompressedData.save()` writes one numpy `.npz` file (format `ume.compressed`, version 1). It holds `g`, `first`, `second`, optionally `cluster_keys`, and JSON metadata: the format and ume versions, the design (roles, $x_{ref}$, levels, metrics), the strata, the row count and the layout. `ume.load()` refuses other files and newer format versions.
+4. **No Spark or map-reduce translation** (Jeffrey Wong). Shards can still be compressed separately, saved, loaded and merged with `+`.
+
+## Alternatives
+
+- Threads: a rayon pool over contiguous row chunks. A cluster could then straddle two chunks, so contiguity would have to be re-stitched at the edges. Hashing by cluster keeps every cluster within one worker, across batches, for free.
+- Storage: Parquet or Arrow IPC, which would need pyarrow. `.npz` needs only numpy and holds the three arrays directly. Revisit if the files must be read outside Python.
+
+## Evidence
+
+- The results do not depend on the thread count: compressed rows to 1e-12, Bayesian draws to 1e-10, and identical multinomial draws (`test_results_do_not_depend_on_threads`).
+- Lazy frames and streams of batches equal the in-memory results (`tests/test_scale.py`), including shuffled Parquet input and batch boundaries inside clusters.
+- At 1M accounts, the exact bootstrap goes from 12.2 s on 1 thread to 4.3 s on 4 ([Performance](../performance.qmd)).
+
+## A caveat
+
+Two shards that resolve $x_{ref}$ separately can differ in the last digit (polars and numpy compute means differently), and `+` refuses designs that differ. For shards, resolve the design once (`cd.design`) or declare $x_{ref}$.

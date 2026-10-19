@@ -1,0 +1,84 @@
+---
+title: "One engine"
+description: "How the code mirrors the generalization: every design is a special case, every step a shared primitive."
+date: 2026-10-18
+---
+
+The universal model is universal because AB tests, cluster randomized tests, encouragement designs, adaptive assignment, and mean or ratio metrics are special cases of one model. The code is organized the same way: shared primitives, and no code path per design.
+
+## The special cases are data, not switches
+
+| The design has | The engine sees | Effect on the computation |
+|---|---|---|
+| no encouragement | $T = Z$ in every row | the first stage is exact (skipped); $\bar x_C$ is the weighted mean |
+| no clusters | one row per cluster | cluster sums are single rows: CR0 becomes HC0 |
+| no adaptive assignment | one propensity, or no cohort column | weights constant within arm, or 1 |
+| a mean metric | a ratio with $D \equiv 1$ | no denominator columns; $\mu_t(1) = 1$ |
+| intent to treat | the model with $T := Z$ | every row is a complier |
+| first stage | the model with regressors $M_1$ and outcomes $T \cdot R$ | the same normal equations, scores and sandwich |
+
+The one data-driven branch is the compliers' mean without encouragement, which uses the pooled weighted mean to match Lin's regression ([`Compliers::from_blocks`](../rust/ume_core/blocks/struct.Compliers.html)).
+
+## The primitives
+
+| Rust (`ume-core`) | What it is | Used by |
+|---|---|---|
+| `RowMatrix` (`Dense`, `Sparse`) | the design matrix $R = (1, x - x_{ref})$; its four products | everything that touches rows |
+| `Blocks` $(S^Y, S, S^T)$ | the additive sufficient statistic of weighted rows | both stages, the compliers, the compressed data |
+| `NormalEquations::second_stage`, `::first_stage` | $A\theta = b$ from two block sets | the fit |
+| `Compliers` | take-up, $\pi_C$, $\bar x_C$ from the same blocks | effects, reports |
+| `inverse_propensity` | $\hat e_c$, $w_a$ from cluster weights $\xi$ | the weights, and (next) every bootstrap draw |
+| `cluster_scores`, `sandwich` | cluster-robust covariance; `Scope::Joint` or `Scope::PerColumn` | both stages |
+| `Layout` | the distinct layout of a cluster summary $u_a$: the per-cluster `Blocks` | compression, compressed fit |
+| `Compressor`, `StratumMoments` | one pass to $G_h$, $\sum u_a$, $\sum u_a u_a^\top$; mergeable | `exp.compress()`, `ume.Compressor` |
+| `MeatSource` | the meat $\sum_a s_a s_a^\top$: from cluster scores (rows) or from $C_h(\sum uu^\top)C_h^\top$ (compressed) | `assemble` |
+| `assemble` | the model: blocks → normal equations → solve → meat → sandwich, both stages, compliers | `fit` (rows), `fit_compressed` |
+| `intent_to_treat` | the ITT model ($T := Z$) as a linear map of each cluster summary | `cd.fit().itt()` |
+| `Pass<F: Fold>` | the one-pass loop (buffer and flush), generic over what a flush does | `Compressor` (`MomentsFold`), `BootstrapCompressor` (`DrawsFold`) |
+| `Stream` (Philox4x64-10), `Weights` | weights as pure functions of (seed, cluster, draw): Exp(1), Poisson(1), multinomial | the exact bootstrap |
+| `strata_blocks`, `point` | per-stratum totals → propensities, $w_h$, blocks; blocks → $\hat\beta$, compliers | the compressed fit and every draw |
+| `gaussian_sums`, `fit_draws` | draws of each stratum's sum from its compressed row; every draw's fit | `cd.posterior()`, `exp.bootstrap()`, the linearized SE |
+| `Merge`, `ParallelPass` | folds over disjoint clusters add; any pass on threads, clusters routed by key hash | every pass |
+| `FirstMomentsFold`, `ScoreFold`, `sandwich_projection` | delta vectors early: pass 1 $(G_h, \sum u_a)$, pass 2 $\sum_a (c_h^\top v_a)^2$ | `exp.effects()` |
+
+| Python (`ume`) | What it is |
+|---|---|
+| `Design`, `Covariates`, `Mean`/`Ratio`, `OutcomeLayout` | the roles, and the outcome columns the metrics imply |
+| `DesignFeatures` | the taxonomy: which special case the data is |
+| `Effect` = contrast ∘ statistic ∘ population, `Levels` ($\mu_1$, $\mu_0$) | every effect from one formula |
+| `Table` | the display of every result |
+
+## Dense or sparse is a type
+
+The engine is `fit<R: RowMatrix>`. `Dense` wraps a faer matrix, and `Sparse` wraps a faer CSR matrix. The Python layer picks one (`sparse="auto"` chooses sparse when at most 30% of $R$ is nonzero, as with many-level categoricals), and the same generic function runs. The small matrices ($d \times d$, $2do \times 2do$) are dense. A sparse Gram for very wide $R$ is a [TODO](todo.qmd).
+
+## Rows and compressed data are two sources for one assembly
+
+| | the blocks | the meat | the propensity |
+|---|---|---|---|
+| rows | $R^\top V R$, … with row weights | cluster scores of the residuals | `inverse_propensity` over clusters, weights 1 |
+| compressed | $\sum_h w_h \sum_{a \in h} u_a$ | $\sum_h C_h (\sum_{a \in h} u_a u_a^\top) C_h^\top$, $C_h = w_h P_{Z_h} L(\hat\theta)$ | `inverse_propensity` over strata, weights $G_h$ |
+
+Everything else (`NormalEquations`, `Compliers`, `sandwich`, the first-stage F, the effects, the report) is the same code. `tests/test_compress.py` checks that the two agree in all 16 designs.
+
+## Every draw is the point estimate with other totals
+
+The point estimate feeds `strata_blocks` with $(G_h, \sum u_a)$. A bootstrap draw feeds the same function with $(\sum \xi_a, \sum \xi_a u_a)$, so the draw recomputes the propensities, $\hat\beta$ and $\bar x_C$ through the same code. The engines differ only in where those totals come from:
+
+| engine | the totals of draw $b$ | cost |
+|---|---|---|
+| point estimate | $(G_h, \sum u_a)$, the first moments | — |
+| exact (`exp.bootstrap`) | a `Pass` whose fold adds $\xi^{(b)}_a v_a$ for every $b$ | one pass, $O(B \cdot \text{nnz})$ per cluster |
+| Gaussian (`cd.posterior`) | a draw from $N(\sum v_a, \sum v_a v_a^\top)$ | no pass |
+
+With $\xi \equiv 1$ the exact engine reproduces the point estimate exactly (`test_identity_draw_reproduces_the_point_estimate`).
+
+## Every standard error is a sum of squared influences
+
+| standard error | $\psi_a$ | from |
+|---|---|---|
+| sandwich | $g_\beta^\top (I \otimes A^{-1}) s_a$ | $\sum uu^\top$ (`fit.effects()`), or two passes (`exp.effects()`) |
+| linearized | $g_h^\top v_a$, $g_h = \partial\tau/\partial\theta_h$ through `fit_draws` | $\sum vv^\top$, or two passes |
+| bootstrap | the draws themselves, $\sum_a (\xi_a - 1)\psi_a$ to first order | `exp.bootstrap()`, `cd.posterior()` |
+
+The one-pass loop has four folds now: moments, draws, first moments and scores. Every fold merges, which is what makes shards, saved files and threads the same mechanism. Each is a few lines; the buffer, the contiguity checks and the row handling are shared.

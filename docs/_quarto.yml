@@ -1,0 +1,257 @@
+project:
+  type: website
+  output-dir: _site
+  # rustdoc for the Rust crates is built into _site/rust by `make docs`.
+
+execute:
+  # Articles are executed once and frozen into docs/_freeze (committed), so
+  # the site rebuilds without re-running notebooks unless their source changes.
+  freeze: auto
+
+website:
+  title: "ume"
+  description: "Universal Model for Experimentation"
+  repo-url: https://github.com/jeffwong/ume
+  repo-actions: [issue]
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: articles/index.qmd
+        text: Articles
+      - href: reference/index.qmd
+        text: Reference
+      - text: Rust
+        href: rust/ume_core/index.html
+      - href: design/index.qmd
+        text: Design
+      - href: changelog.qmd
+        text: Changelog
+  sidebar:
+    - id: design
+      title: Design
+      contents:
+        - design/index.qmd
+        - design/python-rust-core.qmd
+        - design/engine.qmd
+        - design/calibration.qmd
+        - design/performance.qmd
+        - design/api-plan.qmd
+        - section: Decisions
+          contents:
+            - design/decisions/index.qmd
+            - auto: design/decisions/0*.qmd
+        - design/todo.qmd
+
+format:
+  html:
+    theme:
+      light: cosmo
+      dark: darkly
+    toc: true
+    code-copy: true
+
+metadata-files:
+  - reference/_sidebar.yml
+
+quartodoc:
+  package: ume
+  title: Reference
+  dir: reference
+  parser: numpy
+  sidebar: reference/_sidebar.yml
+  render_interlinks: true
+  sections:
+    - title: 1. Annotate
+      desc: Name the role of each column. An Experiment is still a dataframe.
+      contents:
+        - annotate
+        - Experiment
+        - design
+        - kind: page
+          path: covariates
+          summary:
+            name: covariates
+            desc: Declare covariates and their reference points.
+          contents:
+            - covariates
+            - Covariates
+            - Numeric
+        - kind: page
+          path: categorical
+          summary:
+            name: categorical
+            desc: Declare a categorical covariate.
+          contents:
+            - categorical
+            - Categorical
+        - Design
+    - title: 2. Metrics
+      desc: A mean is a ratio with denominator 1. Each metric column also enters as T·column.
+      contents:
+        - kind: page
+          path: mean
+          summary:
+            name: mean
+            desc: A mean metric.
+          contents:
+            - mean
+            - Mean
+        - kind: page
+          path: ratio
+          summary:
+            name: ratio
+            desc: A ratio metric.
+          contents:
+            - ratio
+            - Ratio
+    - title: 3. Compress
+      desc: >
+        One pass to one compressed row per stratum. Its size does not depend on the rows, it
+        fits to the same model, and shards merge with `+`.
+      contents:
+        - CompressedData
+        - CompressedRow
+        - Stratum
+        - Compressor
+        - compress
+        - load
+    - title: 4. Fit
+      desc: One model for every design; the design's features are read from the data.
+      contents:
+        - UniversalFit
+        - DesignFeatures
+    - title: 5. Effects
+      desc: Every effect is contrast ∘ statistic ∘ population.
+      contents:
+        - Effect
+        - kind: page
+          path: custom-effects
+          summary:
+            name: effect
+            desc: Define a custom effect from the compliers' levels.
+          contents:
+            - effect
+            - CustomEffect
+        - Levels
+        - EffectTable
+    - title: 6. Uncertainty from draws
+      desc: >
+        Bootstrap and posterior draws. Each draw refits the model with one weight per cluster;
+        `exp.bootstrap()` is exact (one pass over the rows), `cd.posterior()` is Gaussian (no pass).
+      contents:
+        - Draws
+        - bootstrap
+        - bootstrap_sums
+        - DrawSums
+        - effects
+    - title: Settings and display
+      contents:
+        - set_threads
+        - get_threads
+        - Table
+    - title: Testing
+      desc: The posts' simulator and a numpy reference implementation, used as the test oracle.
+      package: ume.testing
+      contents:
+        - simulate_accounts
+        - truth
+        - fit_rows
+        - draw_rows
+        - complier_mean
+        - inverse_propensity_weights
+    - title: Rust kernels
+      desc: >
+        Low-level functions in the extension module `ume._core`. Their docstrings are the Rust
+        `///` comments in `crates/ume-python`, read from the compiled module.
+      contents:
+        # Give each kernel an explicit page path: the default (`_core.<name>.qmd`)
+        # starts with `_`, which Quarto skips.
+        - kind: page
+          path: core.fit_rows_dense
+          summary:
+            name: fit_rows_dense
+            desc: The universal model on rows, dense design matrix.
+          contents:
+            - name: _core.fit_rows_dense
+              dynamic: true
+        - kind: page
+          path: core.fit_rows_sparse
+          summary:
+            name: fit_rows_sparse
+            desc: The universal model on rows, sparse (CSR) design matrix.
+          contents:
+            - name: _core.fit_rows_sparse
+              dynamic: true
+        - kind: page
+          path: core.Compressor
+          summary:
+            name: Compressor
+            desc: One pass over rows grouped by cluster, to compressed rows.
+          contents:
+            - name: _core.Compressor
+              dynamic: true
+        - kind: page
+          path: core.fit_compressed
+          summary:
+            name: fit_compressed
+            desc: The universal model from compressed rows.
+          contents:
+            - name: _core.fit_compressed
+              dynamic: true
+        - kind: page
+          path: core.compressed_intent_to_treat
+          summary:
+            name: compressed_intent_to_treat
+            desc: Compressed rows of the intent to treat model.
+          contents:
+            - name: _core.compressed_intent_to_treat
+              dynamic: true
+        - kind: page
+          path: core.summary_layout
+          summary:
+            name: summary_layout
+            desc: The entries of a cluster summary in the distinct layout.
+          contents:
+            - name: _core.summary_layout
+              dynamic: true
+        - kind: page
+          path: core.BootstrapCompressor
+          summary:
+            name: BootstrapCompressor
+            desc: One pass over rows to the weighted sums of B bootstrap draws.
+          contents:
+            - name: _core.BootstrapCompressor
+              dynamic: true
+        - kind: page
+          path: core.bootstrap_weights
+          summary:
+            name: bootstrap_weights
+            desc: Bootstrap weights of clusters from Philox streams.
+          contents:
+            - name: _core.bootstrap_weights
+              dynamic: true
+        - kind: page
+          path: core.gaussian_sums
+          summary:
+            name: gaussian_sums
+            desc: Draws of each stratum's weighted sum from its compressed row.
+          contents:
+            - name: _core.gaussian_sums
+              dynamic: true
+        - kind: page
+          path: core.fit_draws
+          summary:
+            name: fit_draws
+            desc: Fits every draw from its per-stratum weighted sums.
+          contents:
+            - name: _core.fit_draws
+              dynamic: true
+        - kind: page
+          path: core.inverse_propensity
+          summary:
+            name: inverse_propensity
+            desc: Cohort propensities and inverse propensity weights.
+          contents:
+            - name: _core.inverse_propensity
+              dynamic: true

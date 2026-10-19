@@ -1,0 +1,17 @@
+---
+title: "0007 Toolchain and supported versions"
+date: 2026-10-18
+status: accepted (abi3 part superseded by 0022)
+basis: instinct
+---
+
+## Decision
+
+- Python `>=3.10`, tested in CI on 3.10 and 3.13. Development uses 3.12 (`.python-version`).
+- Rust: the latest stable release (`rust-toolchain.toml`), edition 2024.
+- One wheel per Python version, not a stable-ABI (abi3) wheel, for now.
+- Linting: ruff (lint and format) and mypy in strict mode for Python; rustfmt and clippy with `-D warnings` for Rust. Line length is 120 for both languages.
+
+## Justification
+
+*Mostly instinct.* 3.10 is the oldest Python version still supported upstream when the project started, and numpy has dropped older versions. Tracking stable Rust avoids pinning to a version nobody chose for a reason. abi3 would ship one wheel for all Python versions, but we have not checked whether rust-numpy works under abi3, and per-version wheels are the simpler default. Revisit before the first release (see the TODO).

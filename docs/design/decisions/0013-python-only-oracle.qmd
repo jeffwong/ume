@@ -1,0 +1,29 @@
+---
+title: "0013 Validation harness: Python only"
+date: 2026-10-18
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+The test oracle is entirely Python, with no R in CI and no R-generated fixtures:
+
+1. a numpy reference implementation of the row-level model in `ume.testing` (`fit_rows`, `complier_mean`, the effects, `draw_rows`), ported from the CSS and BUM chunks;
+2. `linearmodels.IV2SLS` (weights, clustered covariance, no small-sample correction) and `statsmodels` WLS as textbook cross-checks;
+3. a Python port of the simulator (`simulate_accounts`, `truth_pair`), with its own fixed seeds.
+
+## Alternatives
+
+- R fixtures: a one-time export of the CSS dataset with estimatr outputs.
+- Calling R from the test suite.
+
+## Justification
+
+Chosen by Jeffrey Wong. CI stays simple and needs no R toolchain.
+
+## Consequences
+
+- **The handoff's regression numbers cannot be reproduced exactly.** LATE 0.6639, SE 0.0572 and $G_h$ = 7639, … come from R's RNG with `set.seed(2026)`. Our regression numbers will come from the Python simulator, will be recorded in `tests/`, and will be checked for consistency with the handoff's (same truth, same SE/SD and coverage within Monte Carlo error), not for equality.
+- The handoff's invariants (section 7) are language-independent and are all tested.
+- To verify: that `linearmodels`' clustered covariance with `debiased=False` equals CR0 (estimatr `se_type = "CR0"`) for weighted 2SLS. Check this on a small example before relying on it; if it differs, the numpy reference and the closed-form special cases (Wald ratio, difference in means, HC0 by hand) are the oracle.

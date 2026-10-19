@@ -1,0 +1,26 @@
+---
+title: "0004 Documentation site: Quarto + quartodoc, numpydoc docstrings"
+date: 2026-10-18
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+- The documentation site is a Quarto website in `docs/`.
+- **quartodoc** generates the API reference from docstrings, the way pkgdown builds reference pages from roxygen2. Docstrings are written once, in the source, and never copied into `.md` files.
+- **Articles** (the counterpart of pkgdown vignettes) are executed `.qmd` notebooks in `docs/articles/`. They are frozen (`freeze: auto`), so CI does not re-run them unless their source changes.
+- **rustdoc** documents the Rust crates. `make docs` builds it into the site under `/rust/`.
+- Docstrings use the **numpydoc** format, in Python and in the Rust `///` comments of exposed functions.
+
+## Alternatives
+
+- Sphinx with autodoc or autoapi, and myst-nb for notebooks. More mature, but reStructuredText-centric. Quarto is already the tool the research posts are written in.
+- mkdocs-material with mkdocstrings and mkdocs-jupyter. A good option, but articles would be plain Jupyter notebooks rather than Quarto documents.
+- Google-style docstrings.
+
+## Justification
+
+- Quarto is what Jeffrey writes the research in, so moving an analysis from a post to an article is a copy, not a rewrite.
+- quartodoc is maintained by Posit, the makers of Quarto, and is the pkgdown analog for Python.
+- numpydoc is the convention of numpy, scipy, pandas and statsmodels, the scientific Python libraries users will read side by side with ume. *Choosing it over Google style is partly instinct.*

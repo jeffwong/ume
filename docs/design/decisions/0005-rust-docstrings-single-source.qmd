@@ -1,0 +1,27 @@
+---
+title: "0005 Rust doc comments are the single source for Rust-exposed docstrings"
+date: 2026-10-18
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+For a function implemented in `crates/ume-python` and exposed to Python, the docstring is its Rust `///` comment, written in numpydoc format. PyO3 copies it into the function's `__doc__`. quartodoc reads it by importing the compiled module (`dynamic: true` in `docs/_quarto.yml`).
+
+The type stub `python/ume/_core.pyi` holds **signatures only**, with no docstrings.
+
+## Alternatives
+
+- Write docstrings in the `.pyi` stubs. quartodoc can read them statically and IDEs show them, but the text would be duplicated next to the Rust code and would drift.
+- Only document the Python wrappers and leave `_core` undocumented. That hides the kernel contract (contiguity, in-place updates) from the people who most need it.
+
+## Justification
+
+One docstring per function, and it sits next to the code it describes. Most users call the Python wrappers, which carry their own docstrings. The `_core` docstrings are for people working on the library.
+
+## Costs and follow-ups
+
+- Some IDEs show stub docstrings and not runtime `__doc__`, so hover help for `_core` functions may be empty. Acceptable, because `_core` is private.
+- The `.pyi` stubs are written by hand and can drift from the Rust signatures. `mypy` on the Python layer catches some of that. See the TODO about generating stubs.
+- The test `test_rust_docstring_reaches_python` checks that the docstring reaches Python.

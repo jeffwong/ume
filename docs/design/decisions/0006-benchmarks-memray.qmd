@@ -1,0 +1,25 @@
+---
+title: "0006 Benchmarks: criterion, pytest-benchmark, memray"
+date: 2026-10-18
+status: accepted
+basis: evidence
+---
+
+## Decision
+
+`benchmarks/` holds two suites:
+
+- `benchmarks/rust/`: **criterion** benchmarks of the `ume-core` kernels, registered as cargo benches of that crate and run with `cargo bench`.
+- `benchmarks/python/`: **pytest-benchmark** for wall time through the Python API, and **memray** (through pytest-memray) for memory.
+
+## Alternatives
+
+- `tracemalloc` for memory.
+- asv (airspeed velocity) for tracking performance history across commits.
+
+## Justification
+
+- `tracemalloc` only sees allocations made through Python's allocator. Rust allocates with the system `malloc`, so `tracemalloc` would report the kernels as free. memray intercepts native allocations, so it measures what the Rust core actually uses, and `--native` attributes them to Rust stack frames.
+- criterion measures kernels without Python call overhead and reports statistical change between runs.
+- The memory budget is part of the spec. Account summaries must never be stored (handoff section 5.3), and storage grows like $Bk^2$ or $k^4$ depending on the engine (section 5.5). Tests can assert this with `@pytest.mark.limit_memory`.
+- asv is deferred, see the TODO.

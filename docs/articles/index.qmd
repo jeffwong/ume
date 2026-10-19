@@ -1,0 +1,10 @@
+---
+title: "Articles"
+listing:
+  contents: "*.qmd"
+  type: table
+  sort: "order"
+  fields: [title, description]
+---
+
+End to end examples. Each article is a notebook executed when the site is built, so its output always reflects the current code.

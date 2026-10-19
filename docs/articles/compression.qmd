@@ -1,0 +1,84 @@
+---
+title: "Compressing an experiment"
+description: "One pass to a compressed dataset whose size does not depend on the rows; the same fit; shards that merge."
+order: 2
+jupyter: python3
+---
+
+The universal model needs only one compressed row per stratum, an arm × cohort: the number of clusters $G_h$, the sum of the cluster summaries $\sum u_a$, and the sum of their outer products $\sum u_a u_a^\top$ (the [conditionally sufficient statistics post](https://jeffwong.github.io/posts/conditionally_sufficient_statistics/)). The cluster summary $u_a$ holds the blocks $(S^Y, S, S^T)$ of the cluster's rows. It is built during the pass and never stored.
+
+```{python}
+import numpy as np
+import polars as pl
+
+import ume
+from ume.testing import simulate_accounts
+
+df = simulate_accounts(20_000, seed=2026)
+exp = ume.annotate(
+    df,
+    cluster="account",
+    instrument="Z",
+    treatment="T",
+    cohort="day",
+    covariates=ume.covariates(x1=2.0, x2=2.0, kids=0, device=ume.categorical(reference="tv")),
+).metrics(ume.mean("y", name="hours"), ume.ratio("N", "D", name="rebuffers_per_play"))
+
+cd = exp.compress()
+cd
+```
+
+## A dictionary of sufficient statistics
+
+`cd` is a mapping from strata to compressed rows:
+
+```{python}
+row = cd[ume.Stratum(Z=1, cohort=1)]
+row
+```
+
+Its first moments are the three blocks, summed over the stratum's clusters. $S_{00}$ counts rows, and the indicator columns of a categorical hold counts by level:
+
+```{python}
+row.blocks()["S"]
+```
+
+## The same fit
+
+Fitting the compressed data gives the fit on the rows, to rounding error:
+
+```{python}
+fit_rows, fit_compressed = exp.fit(), cd.fit()
+{
+    "max |Δβ|": float(np.abs(fit_rows.beta - fit_compressed.beta).max()),
+    "max relative |Δ cov|": float(np.abs(fit_rows.cov - fit_compressed.cov).max() / np.abs(fit_rows.cov).max()),
+}
+```
+
+```{python}
+fit_compressed.effects()
+```
+
+## Shards
+
+Compressed rows add. Each shard can be compressed separately, on a different machine, and the results summed. A streaming `Compressor` needs the reference points and levels fixed before the pass, so we take them from the design that `compress` resolved:
+
+```{python}
+design = cd.design
+shards = [
+    ume.Compressor(design).update(df.filter(pl.col("account") % 3 == k).sort("account")).finish()
+    for k in range(3)
+]
+merged = shards[0] + shards[1] + shards[2]
+float(np.abs(merged.fit().beta - fit_rows.beta).max())
+```
+
+Rows of a cluster must not be split across shards. Shuffle by cluster before sharding; a merge that sees the same cluster twice is refused.
+
+## Size
+
+The compressed dataset has the same size for 20,000 or 20 million accounts. It holds `len(cd)` strata with $1 + q + q^2$ numbers each, here:
+
+```{python}
+len(cd), cd.q, len(cd) * (1 + cd.q + cd.q**2)
+```

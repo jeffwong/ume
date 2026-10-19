@@ -1,0 +1,34 @@
+---
+title: "TODO"
+date-modified: 2026-10-18
+---
+
+Open questions and deferred work. When an item is decided, write a [decision record](decisions/index.qmd) and remove it here. The handoff's open decisions (section 10) are all settled: see records [0010](decisions/0010-experiment-wrapper.qmd)–[0021](decisions/0021-scale.qmd).
+
+## Statistics
+
+- [ ] **Small-sample corrections.** With small strata (about 60 clusters in the smallest) every method under-covers the LATE by 1.6 to 3 points ([Calibration](calibration.qmd)). Jeffrey chose $t$ intervals (2026-10-18). Open: $t$ with $G - 1$ degrees of freedom barely changes anything here ($G = 3000$: 1.9608 against 1.9600), because the problem is one small, heavily weighted stratum, not few clusters. The effective number of clusters $G^* = (\sum_a \psi_a^2)^2 / \sum_a \psi_a^4$ (Carter, Schnepel and Steigerwald 2017) would see it, but needs $\sum \psi_a^4$: available in the two-pass path, not from compressed rows. *Left documented (Jeffrey, 2026-10-18)*; see [Calibration](calibration.qmd).
+- [ ] Heavy-tailed clusters: the sandwich over-covers slightly (96.6%) while the exact Bayesian bootstrap is closer (95.6%) ([Calibration](calibration.qmd)). Watch with other tail shapes.
+- [ ] *Deferred (Jeffrey, 2026-10-18).* An upgrade of the Gaussian engine for small strata: draw $\sum \xi$ exactly as Gamma($G_h$), or keep third moments ([0019](decisions/0019-gaussian-engine-small-strata.qmd)). The exact engine covers small strata, and the 200-cluster warning points to it.
+
+## Infrastructure
+
+- [ ] Read compressed files outside Python (Arrow or Parquet) if needed ([0021](decisions/0021-scale.qmd)).
+
+- [ ] **Choose a PyPI distribution name** (later, per Jeffrey; free on 2026-10-18: `ume-experiments`, `umexp`, `ume-causal`, `ume-stats`, `ume-py`, `pyume`). `ume` is taken on PyPI by an unrelated package ("Unique Meme Engine"). The import name can stay `ume`; only `[project].name` in `pyproject.toml` and the `pypi.org/p/ume` URLs in `release.yml` change. Free on TestPyPI as of 2026-10-18.
+- [ ] One-time GitHub setup for releases: trusted publishers on PyPI and TestPyPI, `testpypi` / `pypi` environments with required reviewers, Pages source set to GitHub Actions (README → Release).
+- [ ] Sparse Gram matrices for very wide design matrices (thousands of categorical levels), where the dense $2d \times 2d$ and $2do \times 2do$ results become large ([0014](decisions/0014-faer-generic-row-matrix.qmd)).
+- [ ] Speed up the row-level first-stage covariance: $d$ per-equation sandwiches dominate the row fit when $d$ is large. The compressed fit avoids it: compress first (20 ms against 285–449 ms at $d = 51$, `make bench-rust`). Consider making `Experiment.fit()` compress internally.
+- [ ] Sanderson–Windmeijer conditional F for the first stage, alongside the per-equation robust F ([0015](decisions/0015-special-cases-reuse-the-engine.qmd)).
+- [ ] Decide whether `annotate` should warn when a cohort column has constant propensity ([0016](decisions/0016-weights-without-cohort.qmd)).
+- [ ] Generate `_core.pyi` automatically instead of writing it by hand (PyO3's `experimental-inspect`, or maturin's stub generation, once they are stable).
+- [ ] Track benchmark history in CI, across commits and machines (local baselines exist: `make bench-save` / `make bench-compare`) ([0006](decisions/0006-benchmarks-memray.qmd)).
+- [ ] Drop the `griffe<2` pin once quartodoc supports griffe 2 (quartodoc 0.11.1 passes `allow_section_blank_line`, which griffe 2 removed). Moot if we switch to Great Docs (next item).
+- [ ] **Evaluate [Great Docs](https://posit-dev.github.io/great-docs/) as the docs engine** in place of quartodoc and a hand-written `_quarto.yml` ([0004](decisions/0004-docs-quarto-quartodoc.qmd)). Great Docs is Posit's site generator built on Quarto; it grew out of quartodoc (released 2026-04, at 0.17 on 2026-10-18). Possible gains: navigation for user guides (our articles) generated automatically, a link checker, multi-version docs, `llms.txt`, a ready-made GitHub Pages workflow, and griffe 2 support. Try it on a branch and check:
+  - that it documents the compiled module `ume._core` from the Rust `///` docstrings (it reads docstrings by importing the package by default; untested here);
+  - that the Design section (design docs, decision records, this page) fits its custom pages or sections;
+  - that the changelog can come from our `CHANGELOG.md` with its four headings, not only from GitHub Releases;
+  - that rustdoc can still be published under `/rust/` (Great Docs' Rust support covers clap command-line tools only);
+  - how stable its config is (it is young and releases often).
+
+  Outcome: switch everything over (docs, Makefile, CI, README) and supersede 0004, or record in 0004 why we kept quartodoc.

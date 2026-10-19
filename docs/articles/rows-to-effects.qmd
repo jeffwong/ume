@@ -1,0 +1,102 @@
+---
+title: "From rows to effects"
+description: "Annotate an experiment, declare its metrics, fit the universal model, and read its effects."
+order: 1
+jupyter: python3
+---
+
+This article analyzes the running example of the [conditionally sufficient statistics post](https://jeffwong.github.io/posts/conditionally_sufficient_statistics/): a streaming service prompts accounts to turn on a playback setting, ramps the prompt from 5% to 50% of new accounts over four days, and measures each profile's hours watched and rebuffers per play. It is a clustered encouragement design with adaptive assignment and a ratio metric, which is every feature of the universal model at once.
+
+The data is simulated, so we also know the truth.
+
+```{python}
+import polars as pl
+
+import ume
+from ume.testing import simulate_accounts, truth
+
+df = simulate_accounts(20_000, seed=2026)
+df.head()
+```
+
+## 1. Annotate
+
+We name the role of each column. The cluster is the unit of randomization and of independence; the instrument is the randomized prompt; the treatment is whether the profile turned the setting on; the cohort is the day, within which the prompt had one propensity. Each covariate gets a fixed reference point $x_{ref}$.
+
+```{python}
+exp = ume.annotate(
+    df,
+    cluster="account",
+    instrument="Z",
+    treatment="T",
+    cohort="day",
+    covariates=ume.covariates(x1=2.0, x2=2.0, kids=0, device=ume.categorical(reference="tv")),
+)
+exp
+```
+
+`exp` is still a polars frame. Frame operations pass through, and results that keep the annotated columns stay annotated:
+
+```{python}
+type(exp.filter(pl.col("day") > 1)).__name__, type(exp.group_by("day").agg(pl.col("y").mean())).__name__
+```
+
+## 2. Metrics
+
+Hours is a mean metric. Rebuffers per play is a ratio. The library derives the outcome columns, including the $T \cdot Y$ columns that identify the compliers' own levels:
+
+```{python}
+exp = exp.metrics(ume.mean("y", name="hours"), ume.ratio("N", "D", name="rebuffers_per_play"))
+exp.outcome_columns
+```
+
+## 3. Fit
+
+```{python}
+fit = exp.fit()
+fit
+```
+
+The design line is read from the data: clusters with more than one row make the covariance cluster robust, $T \ne Z$ makes it an encouragement design with a first stage, and propensities that differ by day make the assignment adaptive.
+
+## 4. Effects
+
+```{python}
+fit.effects()
+```
+
+Against the truth, computed by simulating the same accounts with everyone and no one prompted:
+
+```{python}
+true = truth(seed=1, n_accounts=200_000)
+eff = fit.effects()
+{
+    "LATE on hours": (round(eff.estimate("hours"), 4), round(true["tau_LATE"], 4)),
+    "effect on rebuffers per play": (round(eff.estimate("rebuffers_per_play"), 5), round(true["tau_R"], 5)),
+}
+```
+
+Who the compliers are, and the effect of the prompt itself:
+
+```{python}
+fit.compliers()
+```
+
+```{python}
+fit.itt()
+```
+
+The same fit answers other questions. The effect for kids profiles watching one hour a day reads the lines at that point:
+
+```{python}
+fit.effects(at={"kids": 1, "x1": 1.0})
+```
+
+And any function of the compliers' levels is an effect:
+
+```{python}
+plays_per_hour = ume.effect("plays_per_hour", lambda m: m.mu1("D") / m.mu1("y") - m.mu0("D") / m.mu0("y"))
+fit.effects(plays_per_hour)
+```
+
+That needs `D` and `y` among the outcome columns, which the two metrics provide.

@@ -1,0 +1,81 @@
+---
+title: "A Python package with a Rust core"
+description: "How ume is built, how the layers fit together, and how to add a kernel."
+date: 2026-10-18
+---
+
+This document explains how the package is put together and why. The decisions behind it are recorded in [0001](decisions/0001-python-api-rust-core.qmd)–[0003](decisions/0003-maturin-uv.qmd).
+
+## Three layers
+
+```
+python/ume/            public API (Python)
+  └── ume._core        extension module, compiled from:
+crates/ume-python/     PyO3 bindings (Rust): arrays in, GIL released, errors mapped
+  └── ume-core
+crates/ume-core/       numeric kernels (pure Rust, no Python)
+```
+
+Each layer has one job:
+
+| Layer | Owns | Must not |
+|---|---|---|
+| `python/ume` | The API users see: argument validation, conversion to contiguous float64, defaults, result objects, docstrings for users. | Loop over rows. |
+| `crates/ume-python` | Converting numpy arrays to Rust slices, releasing the GIL, turning Rust errors into Python exceptions. | Hold numerical logic. |
+| `crates/ume-core` | The arithmetic: buffers, flushes, accumulators, solves. | Depend on Python, PyO3 or numpy. |
+
+The dependency arrows only point down. `ume-core` knows nothing about Python, so its tests and benchmarks run with plain `cargo` ([0002](decisions/0002-two-crates.qmd)).
+
+## Files and what each does
+
+| File | Purpose |
+|---|---|
+| `pyproject.toml` | Python package metadata. `[build-system]` names maturin. `[tool.maturin]` points at the bindings crate (`manifest-path`), says the Python sources are in `python/` (`python-source`), and names the extension `ume._core` (`module-name`). Dependency groups: `dev`, `docs`, `bench`. |
+| `Cargo.toml` (root) | Cargo workspace. Shares version, edition, lints and the release profile (thin LTO, one codegen unit) with both crates. |
+| `crates/ume-python/Cargo.toml` | `crate-type = ["cdylib"]` produces a shared library that Python can import. `[lib] name = "_core"` must match the last part of `module-name`. |
+| `crates/ume-python/src/lib.rs` | `#[pyfunction]` wrappers and the `#[pymodule] fn _core`. |
+| `python/ume/_core.pyi` | Type stubs for the extension, for mypy and IDEs. Signatures only ([0005](decisions/0005-rust-docstrings-single-source.qmd)). |
+| `python/ume/py.typed` | Tells type checkers that the package ships types (PEP 561). |
+| `rust-toolchain.toml` | Pins the toolchain channel and components, so rustup installs the same toolchain everywhere. |
+| `uv.lock`, `Cargo.lock` | Lock files for both ecosystems. Both are committed. |
+
+## The build
+
+`uv sync` creates `.venv`, installs the dependency groups, and builds `ume` as an editable install. maturin compiles `ume-python` (and with it `ume-core`) and places `_core.*.so` in `python/ume/`. The `cache-keys` in `[tool.uv]` include every `.rs` and `Cargo.toml` file, so uv rebuilds whenever Rust code changes.
+
+Two build modes matter:
+
+- `uv sync` and `maturin develop` build in **debug** mode by default. That is fine for tests, but kernels are often an order of magnitude slower than in release mode.
+- `maturin develop --release` (`make build`) builds with optimizations. **Always benchmark a release build.** The `make bench` target does this.
+
+The version has one source, `version` in the root `Cargo.toml`. maturin copies it into the package metadata, and `ume.__version__` reads it from the compiled module, so the two cannot disagree. A test checks this.
+
+## Crossing the boundary
+
+The rules every binding follows:
+
+1. **Zero copy in, contiguity required.** Bindings take `PyReadonlyArray1<f64>` and `PyReadwriteArray1<f64>` (or the `2`/`Dyn` variants) and call `as_slice()`. `as_slice()` fails on a non-contiguous array, which PyO3 raises as a Python exception. The Python layer calls `np.ascontiguousarray(..., dtype=np.float64)` first, so users never see that error.
+2. **Release the GIL.** Wrap the kernel call in `py.detach(|| ...)`, called `allow_threads` before PyO3 0.26. Other Python threads keep running, and it is required before the core uses its own threads.
+3. **Validate in the binding, not with a panic.** Check shapes and return `PyValueError` and friends. A Rust panic becomes `pyo3_runtime.PanicException`, which is a bug report, not an error message. Panics in `ume-core` (`assert!`) guard invariants the binding has already checked.
+4. **Mutation is explicit.** A kernel that writes into an array takes `PyReadwriteArray` and says "in place" in its docstring. Public Python functions return new arrays unless their name or docstring says otherwise.
+5. **Rust owns no Python objects between calls.** State that must persist (for example a mergeable compressor) will be a `#[pyclass]` wrapping a plain Rust struct from `ume-core`. *Not built yet, see the [TODO](todo.qmd).*
+
+## Docstrings
+
+Every function gets a docstring in numpydoc format ([0004](decisions/0004-docs-quarto-quartodoc.qmd)).
+
+- Python functions: the usual docstring.
+- Rust functions exposed to Python: the `///` comment in `crates/ume-python`. PyO3 turns it into `__doc__`, and quartodoc reads it from the compiled module ([0005](decisions/0005-rust-docstrings-single-source.qmd)).
+- Rust functions inside `ume-core`: rustdoc comments with `# Examples`, `# Panics` and `# Errors` sections. Examples are compiled and run as doc tests by `cargo test`.
+
+## Adding a kernel: checklist
+
+1. Write the kernel in `crates/ume-core/src/`, with a rustdoc comment and unit tests. Run `cargo test -p ume-core`.
+2. Add a criterion benchmark in `benchmarks/rust/`.
+3. Wrap it in `crates/ume-python/src/lib.rs`: `#[pyfunction]` with an explicit `#[pyo3(signature = ...)]`, a numpydoc `///` comment, input checks, and `py.detach`. Register it in `fn _core`.
+4. Add its signature to `python/ume/_core.pyi`.
+5. Write the public Python function in `python/ume/`, with its numpydoc docstring, and export it from `ume/__init__.py` if it is public.
+6. Add pytest tests in `tests/` and, where it matters, a memory or speed benchmark in `benchmarks/python/`.
+7. List it in the `quartodoc.sections` of `docs/_quarto.yml`.
+8. Add an entry to `CHANGELOG.md`, and a decision record if a choice was made.
+9. Run `make lint test docs`.

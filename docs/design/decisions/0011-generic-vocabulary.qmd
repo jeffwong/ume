@@ -1,0 +1,24 @@
+---
+title: "0011 Generic vocabulary in the public API"
+date: 2026-10-18
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+The public API uses generic names.
+
+- **Data levels:** row → cluster summary ($u_a$, $v_a$) → compressed row → compressed dataset.
+- **Column roles:** `cluster`, `instrument`, `treatment`, `cohort`, `covariates`.
+- The math symbols stay as they are: $a$, $h$, $G_h$, $Z$, $T$, $w$, $\xi$, $B$, $\beta$, $\bar x_C$.
+
+The docs map the posts' terms one to one: account → cluster, profile row → row, account summary → cluster summary, prompt → instrument, day → cohort. The full table is in the [API plan](../api-plan.qmd) section 5.
+
+## Alternatives
+
+Keep account / profile in the API, which is closest to the research but tied to its streaming example.
+
+## Justification
+
+Chosen by Jeffrey Wong. The library covers any clustered experiment, not only accounts with profiles. One name per meaning still holds: each role has exactly one name, `instrument` is never called `assignment`, `B` is never the coefficient matrix, and `Z` is never a design matrix.

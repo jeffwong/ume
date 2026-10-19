@@ -1,0 +1,20 @@
+---
+title: "ume"
+subtitle: "Universal Model for Experimentation"
+---
+
+`ume` fits one model that covers most online experiment designs: weighted two stage least squares with every covariate interacted with treatment, cluster robust standard errors, and multiple outcome columns. Switching features on or off gives the textbook analysis of an AB test with Lin regression, a cluster randomized test, an encouragement design (LATE), ramped propensities (IPW), and ratio metrics.
+
+It reports effects with three forms of uncertainty (sandwich standard errors, exact Bayesian bootstrap posteriors, and approximate posteriors from compressed data), all from a **compressed dataset** built in one pass over the raw rows and mergeable across shards.
+
+::: {.callout-note}
+The library is in early development. The API documented here is a skeleton.
+:::
+
+## Where to go next
+
+- [Articles](articles/index.qmd): end to end examples, executed as notebooks.
+- [Reference](reference/index.qmd): every public function, generated from docstrings.
+- [Rust](rust/ume_core/index.html): rustdoc for the numeric core.
+- [Design](design/index.qmd): architecture, decisions and their justifications, TODO.
+- [Changelog](changelog.qmd)

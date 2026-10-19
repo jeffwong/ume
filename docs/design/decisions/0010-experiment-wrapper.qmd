@@ -1,0 +1,24 @@
+---
+title: "0010 Annotation: an Experiment wrapper over the native dataframe"
+date: 2026-10-18
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+`ume.annotate(df, cluster=..., instrument=..., treatment=..., cohort=..., covariates=...)` returns an `Experiment`. It wraps the native pandas or polars frame by composition, together with a frame-independent, serializable `Design`.
+
+- Attribute access is forwarded to the native frame. A returned frame that still contains every annotated column is re-wrapped with the same `Design`. Anything else (aggregates, group-bys, frames that lost a role column) comes back native.
+- `exp.frame` returns the native frame.
+- Column access is frame-agnostic through narwhals.
+- `design.bind(df)` builds the same `Experiment` from a `Design` made separately.
+
+## Alternatives
+
+- A `df.ume` accessor or namespace. pandas `attrs` do not survive many operations, and polars frames carry no metadata, so the roles would live outside the frame anyway.
+- A `Design` object only (`design.compress(df)`). Simplest, but the frame and its roles travel separately.
+
+## Justification
+
+Chosen by Jeffrey Wong, from the [API plan](../api-plan.qmd) section 8. The user asked to keep dataframe operations available, and one class cannot inherit from both pandas and polars (polars also discourages subclassing), so composition with delegation is the way to keep them for both. The `Design` underneath keeps the roles serializable, which the compressed dataset's metadata needs.

@@ -1,0 +1,26 @@
+---
+title: "0019 The Gaussian posterior warns below 200 clusters per stratum"
+date: 2026-10-18
+status: accepted
+basis: evidence
+---
+
+## Decision
+
+`CompressedData.posterior()`, the Gaussian engine, warns when any stratum has fewer than 200 clusters and recommends `Experiment.bootstrap()`, the exact engine.
+
+## Evidence
+
+Found by the linearization test (invariant 7). The design is an unclustered AB test with a ramp; posterior SD / sandwich SE and the skewness of the LATE, with 3,000 draws:
+
+| accounts | smallest $G_h$ | exact / SE | Gaussian / SE | skew, exact | skew, Gaussian |
+|---|---|---|---|---|---|
+| 3,000 | 60 | 0.988 | 1.171 | 0.05 | 1.07 |
+| 10,000 | 229 | 1.019 | 1.004 | −0.06 | −0.05 |
+| 30,000 | 573 | 0.986 | 1.031 | 0.03 | 0.03 |
+
+Both engines move $\hat e$ and $\bar x_C$ by the same amount. The gap comes from the weights: normal multipliers can be negative ("a draw is not a population", handoff 5.5), so in a small stratum the drawn $\sum \xi_a R_a R_a^\top$ can be far from any population and the refit has heavy tails. Exp(1) weights cannot do that. This agrees with the handoff's advice to use the exact engine for small strata.
+
+## Instinct
+
+The threshold of 200 is a judgment call from this one scan (60 clusters failed, 229 passed). It is not a derived bound. Possible upgrades, not researched: drawing $\sum \xi$ exactly as Gamma($G_h$), or keeping third moments (handoff 5.5).

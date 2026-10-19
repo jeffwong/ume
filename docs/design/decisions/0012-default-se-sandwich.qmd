@@ -1,0 +1,21 @@
+---
+title: "0012 Default standard error: the sandwich"
+date: 2026-10-18
+status: accepted
+basis: evidence
+---
+
+## Decision
+
+`fit.effects()` uses `se="sandwich"` by default: the delta method on $\widehat{\text{Cov}}(\text{vec}\,\hat\beta)$, CR0 when rows are clustered and HC0 when each cluster has one row. Both `se="linearized"` and a `Draws` object (`se=post`) can be passed explicitly.
+
+## Alternatives
+
+- The linearized SE that includes the uncertainty in $\hat e$ and $\bar x_C$.
+- The Gaussian posterior from the compressed data.
+
+## Justification
+
+Chosen by Jeffrey Wong. The sandwich is the only option fully verified against textbook 2SLS (estimatr, 16 designs, CSS post), and it is deterministic. The linearized SE matched the Bayesian bootstrap in research (handoff section 8), but it is in neither post, so it needs a written derivation and an approval before it ships (planned for M4). Revisit the default then.
+
+The report always names the method, and notes that the sandwich holds $\hat e$ and $\bar x_C$ fixed.

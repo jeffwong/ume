@@ -1,0 +1,18 @@
+---
+title: "0016 Without a cohort column, all weights are 1"
+date: 2026-10-18
+status: accepted
+basis: evidence
+---
+
+## Decision
+
+When `cohort` is not given, every row has weight 1, as in the posts' designs without a ramp (`prepare(ramp = FALSE)`). When it is given, every cluster gets the inverse propensity weight of its cohort, even if the propensities happen to be equal.
+
+## Justification
+
+This reproduces the posts and the textbook comparisons exactly (16 designs).
+
+## A subtlety, recorded for later
+
+With one cohort, IPW weights are constant **within each arm** ($1/\hat e$ and $1/(1-\hat e)$), not constant overall. Because every regressor is interacted with treatment, arm-constant weights cancel in $\hat\beta$, in the sandwich, and in the Wald-ratio $\bar x_C$. They do **not** cancel in the pooled mean used for $\bar x_C$ without encouragement, where IPW gives each arm equal weight. So "a cohort column with a constant propensity" and "no cohort column" give the same coefficients but slightly different ATE reading points. Both are valid; the docs say which one is used.

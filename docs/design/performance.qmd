@@ -1,0 +1,26 @@
+---
+title: "Performance"
+description: "ume against the research reference implementation (Rcpp), at 1M accounts."
+date: 2026-10-18
+---
+
+The handoff's performance reference (section 7): 1M accounts, about 2.19M profile rows, $k = 5$ covariates, $B = 1000$ draws, on an Apple Silicon laptop. ume has one more outcome column ($o = 6$, the $T \cdot y$ column of the mean metric) than the research code ($o = 5$). Timings come from `exp.compress()`, `exp.bootstrap()`, `cd.posterior()` and `exp.effects()`, end to end from a polars frame.
+
+| step | research (R + Rcpp) | ume, 1 thread | ume, 4 threads |
+|---|---|---|---|
+| refit on rows, 1,000 draws | 684 s (extrapolated) | — | — |
+| exact Bayesian bootstrap, one pass | 11.7 s | 12.2 s | **3.8 s** |
+| compression + 1,000 Gaussian draws | 1.2 s | 1.31 s | **0.40 s** |
+| compression (sandwich state) | 0.56 s (Rcpp kernel only) | 1.29 s (0.66 s in Rust) | **0.38 s** (0.24 s in Rust) |
+| two-pass linearized standard errors | — | 1.37 s | 1.20 s |
+| fit from the compressed data | — | 1.2 ms | 1.2 ms |
+
+**Reading.**
+
+- The kernels are on par with Rcpp, single-threaded. Threads help the exact bootstrap most (2.8×), because its flush, $O(B \cdot \text{nnz})$ per cluster, dominates.
+- Compression was limited by Python-side preparation until the categorical work moved into the frame's engine: distinct levels, level indicators and cohort codes are now computed by polars (hashed, vectorized), and the cluster count is computed only when the multinomial bootstrap needs it. That took compression from 0.94 s to 0.38 s on 4 threads; the Rust pass is now about two thirds of it.
+- The 1-thread column predates that change.
+- Building with the stable ABI (abi3, [0022](decisions/0022-abi3-wheels.qmd)) did not change the timings (compression 0.94 s before and after, the exact bootstrap 4.3 s).
+- Results agree across thread counts to about 1e-14 (compressed rows) and 1e-12 (draws).
+
+**Peak memory** is measured by `make bench-memory` (memray, including Rust allocations), with budgets in `benchmarks/python/bench_fit.py`. Cluster summaries are never stored; the compressed dataset at $k = 5$, $o = 6$ is 8 strata × $(1 + 78 + 78^2)$ numbers, whatever the number of rows.

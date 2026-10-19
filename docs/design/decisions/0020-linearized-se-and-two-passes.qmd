@@ -1,0 +1,40 @@
+---
+title: "0020 The linearized standard error, and standard errors in two passes"
+date: 2026-10-18
+status: accepted
+basis: evidence
+---
+
+## Decisions
+
+1. **`se="linearized"`** is available on every fit. It is the first-order expansion of the bootstrap in the per-stratum sums, so it includes the uncertainty in $\hat e$ and $\bar x_C$ that the sandwich holds fixed.
+2. **`exp.effects(se=...)`** computes either standard error in two passes over the rows, without second moments (delta vectors early).
+
+The default stays `"sandwich"` ([0012](0012-default-se-sandwich.qmd)); revisit it with the calibration results.
+
+## Derivation (approved by Jeffrey Wong, 2026-10-18)
+
+A draw of an effect is a smooth function of the stratum sums, $\tau(\theta)$, with $\theta_h = \sum_{a\in h}\xi_a v_a$ and $v_a = (1, u_a)$. The function recomputes $\hat e$ from the first entries, then $\hat\beta$ and $\bar x_C$. At $\xi = 1$, $\hat\theta_h = (G_h, \sum u_a)$. With $g_h = \partial\tau/\partial\theta_h$,
+
+$$\tau(\theta(\xi)) - \hat\tau \approx \sum_h g_h^\top(\theta_h(\xi) - \hat\theta_h) = \sum_a (\xi_a - 1)\, g_{h(a)}^\top v_a,$$
+
+and with independent weights of mean 1 and variance 1,
+
+$$\text{Var} \approx \sum_a \psi_a^2, \qquad \psi_a = g_{h(a)}^\top v_a, \qquad \sum_a \psi_a^2 = \sum_h g_h^\top \Big(\sum_{a\in h} v_a v_a^\top\Big) g_h.$$
+
+This is an influence-function (CR0-type) variance. The sandwich is the special case where $\tau$ depends on $\theta$ only through $\hat\beta$.
+
+**Computation.** $g_h$ is taken by central differences (relative step $10^{-5}$) through the engine's own per-draw fit, `fit_draws`, which evaluates all $2H(1+q)$ perturbed sum vectors in one call. There is no second implementation of the model.
+
+**Two passes.** Both standard errors have the form $\sum_a (c_h^\top v_a)^2$:
+
+- sandwich: $c_h = (0, C_h^\top (I_o\otimes A^{-1})^\top g_\beta)$;
+- linearized: $c_h = g_h$.
+
+Pass 1 ([`FirstMomentsFold`](../../rust/ume_core/early/struct.FirstMomentsFold.html)) gives $(G_h, \sum u_a)$, hence the estimate and every $c_h$. Pass 2 ([`ScoreFold`](../../rust/ume_core/early/struct.ScoreFold.html)) adds $(c_h^\top v_a)^2$. Storage is $H(1+q)$ numbers and one per effect, instead of $H(1+q)^2$.
+
+## Evidence
+
+- **Exact special case.** With no covariates and no cohort, nothing but $\hat\beta$ moves, so the linearized SE must equal the sandwich. It does, to 1e-6 relative, with and without encouragement and clusters (`test_linearized_equals_sandwich_when_nothing_else_moves`).
+- **Tracks the Bayesian bootstrap.** In the running example (20,000 accounts), the LATE's SE is 0.05926 (sandwich), 0.05988 (linearized) and 0.0601 (Bayesian bootstrap, 4,000 draws). The handoff's research found 0.0585 (linearized) against 0.0583 (bootstrap).
+- **Invariant 8.** Two passes equal the compressed fit in all 16 designs: estimates to 1e-10, sandwich SEs to about 1e-14 relative, linearized SEs to about 1e-10 relative (central-difference rounding).

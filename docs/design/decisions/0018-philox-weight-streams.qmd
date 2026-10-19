@@ -1,0 +1,34 @@
+---
+title: "0018 Bootstrap weights from Philox4x64-10, keyed by cluster"
+date: 2026-10-18
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+Every bootstrap weight is a pure function of (seed, cluster, draw), computed with the counter-based generator **Philox4x64-10** (Random123), implemented in `ume-core` and checked bit for bit against numpy's `np.random.Philox`.
+
+**Stream layout.** For the uniform behind the weight of cluster $a$ in draw $b$:
+
+- key = (seed, cluster key);
+- counter = $(\lfloor b/4 \rfloor,\ \text{scheme},\ 0,\ 0)$;
+- word = $b \bmod 4$ of the output block.
+
+The scheme tag (0 Bayesian, 1 Poisson, 2 multinomial, 3 normal) keeps the streams of different schemes apart. The cluster key is the integer id, or the BLAKE2b hash of the id ([0017](0017-compression.qmd)).
+
+**Uniform to weight.** $U = (\lfloor x / 2^{12} \rfloor + \tfrac12)\, 2^{-52}$, strictly inside $(0, 1)$. With 53 bits, the largest output would round to exactly 1, as a unit test showed. Then:
+
+- Bayesian: $\xi = -\log U \sim$ Exp(1);
+- Poisson: invert the Poisson(1) CDF;
+- classical (multinomial over the $G$ clusters, in pass order): $c_i \sim \text{Binomial}(G - \sum_{j<i} c_j,\ 1/(G-i))$ by CDF inversion, one uniform per (draw, cluster). This needs $G$ before the pass and one ordered pass, so it cannot be sharded.
+
+## Alternatives
+
+- Python's `random` module (Mersenne Twister) or numpy's default generator (PCG64). Both are sequential: a cluster's weight would depend on row order and sharding.
+- The research splitmix hash. Unvetted, and its key packing collides once $b \ge 1{,}000{,}003$ (handoff 5.5).
+- Threefry, the same family (used by JAX), or ChaCha (cryptographic, slower). Neither ships with numpy.
+
+## Justification
+
+Approved by Jeffrey Wong. A counter-based generator gives the same weight on any machine, in any order, without knowing $n$ and without storing a $G \times B$ matrix. Philox passes BigCrush, is standard (numpy, cuRAND, TensorFlow), and is cheap. Matching numpy's variant gives a free, independent test oracle.

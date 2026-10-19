@@ -1,0 +1,100 @@
+---
+title: "Posteriors and bootstraps"
+description: "The Bayesian, Poisson and classical bootstraps of the universal model, exact in one pass or Gaussian from the compressed rows."
+order: 3
+jupyter: python3
+---
+
+The product manager of the [Bayesian universal model post](https://jeffwong.github.io/posts/bayesian_universal_model/) asks: what is the probability that the setting cuts rebuffers per play by at least 10% for the profiles that use it? A standard error does not answer that. A posterior does.
+
+A bootstrap draw is the universal model refit with one more weight per cluster, $\xi_a^{(b)}$. The draw recomputes the propensities, $\hat\beta$ and $\bar x_C$. The three bootstraps differ only in how the weights are drawn:
+
+| `weights=` | $\xi_a$ | the draws are |
+|---|---|---|
+| `"bayesian"` | Exp(1) | a posterior (Dirichlet(1, …, 1) over the clusters) |
+| `"poisson"` | Poisson(1) | a sampling distribution |
+| `"multinomial"` | counts of $G$ draws with replacement | the classical bootstrap of clusters |
+
+Each weight is a pure function of (seed, cluster, draw), from a Philox stream, so it does not depend on row order or sharding.
+
+```{python}
+import numpy as np
+
+import ume
+from ume.testing import simulate_accounts
+
+df = simulate_accounts(20_000, seed=2026)
+exp = ume.annotate(
+    df,
+    cluster="account",
+    instrument="Z",
+    treatment="T",
+    cohort="day",
+    covariates=ume.covariates(x1=2.0, x2=2.0, kids=0, device=ume.categorical(reference="tv")),
+).metrics(ume.mean("y", name="hours"), ume.ratio("N", "D", name="rebuffers_per_play"))
+fit = exp.fit()
+```
+
+## Exact, in one pass
+
+`exp.bootstrap()` reads the rows once and builds every draw's sums at the same time:
+
+```{python}
+post = exp.bootstrap(1000, weights="bayesian", seed=1)
+post
+```
+
+The product manager's answer is the share of draws in which rebuffers per play fall by at least 10%, and by more:
+
+```{python}
+rho = ume.Effect(exp.design.metrics[1], "relative")
+{f"P(rho_R < {c:.0%})": post.prob(rho, below=c) for c in (-0.1, -0.2, -0.3, -0.4)}
+```
+
+The draws can replace the sandwich as standard errors. They also carry the uncertainty in $\hat e$ and $\bar x_C$, which the sandwich holds fixed:
+
+```{python}
+fit.effects(se=post)
+```
+
+## From the compressed rows, with no pass
+
+Given the data, a stratum's weighted sum $\sum_{a \in h} \xi_a v_a$ has mean $\sum v_a$ and covariance $\sum v_a v_a^\top$: exactly the compressed row. `cd.posterior()` draws each stratum's sum from that normal distribution and refits each draw exactly:
+
+```{python}
+cd = exp.compress()
+cd.posterior(1000, seed=1)
+```
+
+It agrees with the exact posterior here, because every stratum has hundreds of clusters. With small strata (fewer than 200 clusters) it warns and recommends the exact engine: the normal multipliers can be negative, and small strata then widen and skew the posterior.
+
+## The posterior agrees with the sandwich
+
+To first order, a draw moves an effect by $\sum_a (\xi_a - 1)\,\psi_a$ with independent weights of variance 1, so the posterior variance is close to the cluster sandwich:
+
+```{python}
+e = ume.Effect(exp.design.metrics[0])
+{
+    "sandwich SE": fit.effects().std_err("hours"),
+    "posterior SD, exact": float(post.values(e).std(ddof=1)),
+    "posterior SD, gaussian": float(cd.posterior(1000, seed=2).values(e).std(ddof=1)),
+    "poisson bootstrap SD": float(exp.bootstrap(1000, weights="poisson", seed=3).values(e).std(ddof=1)),
+    "classical bootstrap SD": float(exp.bootstrap(1000, weights="multinomial", seed=4).values(e).std(ddof=1)),
+}
+```
+
+## The linearized standard error
+
+The bootstrap's first-order expansion has a closed form from the compressed rows: $\sum_h g_h^\top(\sum v_a v_a^\top)g_h$, with $g_h$ the gradient of the effect with respect to stratum $h$'s sums. Unlike the sandwich, it moves $\hat e$ and $\bar x_C$, so it tracks the posterior SD:
+
+```{python}
+fit.effects(se="linearized")
+```
+
+## Many covariates: two passes, no second moments
+
+The compressed rows grow like $k^4$ with the number of covariates. When the effects are known in advance, `exp.effects()` gives the same estimates and standard errors in two passes over the rows, keeping only $H(1+q)$ numbers and one per effect:
+
+```{python}
+exp.effects(se="linearized")
+```

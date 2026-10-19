@@ -1,0 +1,21 @@
+---
+title: "0003 Build with maturin, manage environments with uv"
+date: 2026-10-18
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+- **maturin** is the build backend, in its *mixed* layout: Python sources in `python/ume/`, the extension built as `ume._core`.
+- **uv** manages the virtual environment, dependency groups and the lock file (`uv.lock`).
+- The version has one source: `version` in the workspace `Cargo.toml`. maturin reads it into the package metadata (`dynamic = ["version"]`), and `ume.__version__` reads it from the compiled module.
+
+## Alternatives
+
+- setuptools-rust. Older, and needs more configuration for the same result.
+- pip and venv, or conda. Neither gives a lock file plus a fast, reproducible sync in one tool.
+
+## Justification
+
+maturin is the build tool the PyO3 project recommends, and it builds wheels for every platform with `maturin build` or `maturin-action` in CI. The mixed layout keeps a real Python package, where the public API lives, next to the compiled module. With `cache-keys` on the Rust sources, `uv sync` and `uv run` rebuild the extension when Rust code changes, so the environment cannot go stale silently.

@@ -1,0 +1,55 @@
+---
+title: "Calibration"
+description: "Are ume's intervals calibrated against a known truth? 1,000 simulated experiments."
+date: 2026-10-18
+---
+
+Agreement tests check that ume computes each estimator correctly. Calibration checks that the estimators answer the question: across repeated experiments, a 95% interval should contain the true effect 95% of the time.
+
+**Setup.** 1,000 replications of the running example (20,000 accounts, about 44,000 profile rows, a four-day ramp, encouragement, a ratio metric), each with a new seed. The truth comes from simulating 2 × 1M accounts with everyone and no one prompted: LATE = 0.6130 and $\tau_R$ = −0.02737 (the posts' R truth: 0.6133 and −0.02725). The draws use $B = 500$. Reproduce with `uv run python benchmarks/calibration.py --scenario running`; the numbers are in `benchmarks/results/calibration-running.json`.
+
+**Monte Carlo noise** with 1,000 replications: about ±0.022 for SE/SD and ±0.7 percentage points for coverage.
+
+| method | effect | bias | ± MC SE | SE/SD | coverage |
+|---|---|---|---|---|---|
+| sandwich | LATE | −0.00243 | 0.00189 | 0.999 | 94.9% |
+| sandwich | $\tau_R$ | −0.00000 | 0.00013 | 1.011 | 94.9% |
+| linearized | LATE | −0.00243 | 0.00189 | 1.006 | 95.1% |
+| linearized | $\tau_R$ | −0.00000 | 0.00013 | 1.011 | 94.9% |
+| Bayesian bootstrap, exact | LATE | −0.00261 | 0.00189 | 1.005 | 95.0% |
+| Bayesian bootstrap, exact | $\tau_R$ | −0.00000 | 0.00013 | 1.011 | 94.4% |
+| Gaussian posterior | LATE | −0.00259 | 0.00189 | 1.008 | 94.7% |
+| Gaussian posterior | $\tau_R$ | 0.00001 | 0.00013 | 1.015 | 94.3% |
+| per row (wrong) | LATE | −0.00248 | 0.00189 | **0.892** | **91.4%** |
+| per row (wrong) | $\tau_R$ | 0.00001 | 0.00013 | 0.998 | 94.1% |
+
+**Reading.**
+
+- Every method's SE/SD and coverage are within Monte Carlo noise of 1 and 95%. The handoff's R table has the same pattern (sandwich 0.963 / 94.5%, exact 0.968 / 94.0%, Gaussian 0.975 / 93.7%).
+- The LATE's bias, −0.0024 ± 0.0019, is 1.3 Monte Carlo SEs from zero, so it is not distinguishable from noise.
+- **Negative control.** Putting the bootstrap weight on each profile instead of each account ignores the clusters. It is 11% too narrow and under-covers the LATE (91.4%), as in the handoff (0.856 / 90.9%). The ratio effect is barely affected, also as in the handoff (94.6%). The harness detects a wrong method.
+- These calibration numbers cannot separate the sandwich from the linearized SE: in this design the uncertainty in $\hat e$ and $\bar x_C$ is about 1% of the SD. The default stays the sandwich ([0012](decisions/0012-default-se-sandwich.qmd)).
+
+## Other weights and harder designs
+
+The same harness (`--scenario`), 1,000 replications each. Coverage of the 95% intervals:
+
+| method | running: LATE | running: $\tau_R$ | small strata: LATE | small strata: $\tau_R$ | heavy tails: LATE | heavy tails: $\tau_R$ |
+|---|---|---|---|---|---|---|
+| sandwich | 94.9% | 94.9% | 93.2% | 95.3% | 96.6% | 94.9% |
+| linearized | 95.1% | 94.9% | 93.2% | 95.1% | 96.6% | 94.9% |
+| Bayesian, exact | 95.0% | 94.4% | 91.9% | 94.7% | 95.6% | 94.4% |
+| Poisson, exact | 94.2% | 94.4% | 92.6% | 95.1% | 95.9% | 94.4% |
+| classical (multinomial), exact | 94.9% | 95.1% | 93.2% | 94.7% | 95.6% | 95.1% |
+| Gaussian posterior | 94.7% | 94.3% | 93.4% | 95.7% | 96.3% | 94.7% |
+| per row (wrong) | 91.4% | 94.1% | 89.5% | 94.4% | **77.5%** | 94.1% |
+
+LATE SE/SD by scenario: 0.999–1.009 (running), 0.949–0.986 (small strata), 1.018–1.024 (heavy tails). The negative control: 0.892, 0.852, 0.639.
+
+- **Small strata** (3,000 accounts; the smallest stratum, the prompted accounts of day 1, has about 60 clusters with inverse propensity weights near 20). Every method under-covers the LATE by 1.6 to 3 points, beyond Monte Carlo noise, and SE/SD is below 1 for all of them. This is the estimator in a small sample, not one engine's problem: the Gaussian posterior is no worse than the exact ones here. **This is a known limitation, left documented.** Intervals for the LATE are about 2 points too narrow when one stratum is small and carries large inverse propensity weights. $t$ intervals with $G - 1$ degrees of freedom would not help, because $G$ is large; an effective-clusters correction is noted in the [TODO](todo.qmd). With small strata, read the LATE's intervals as slightly optimistic.
+- **Heavy tails** (an account-level Student-t(2.5) shock to hours). The sandwich and linearized intervals over-cover slightly (96.6%), with SE/SD near 1. The exact Bayesian and classical bootstraps are closest (95.6%). Ignoring the clusters fails badly here (77.5%): weighting by cluster matters most when clusters are heavy-tailed.
+- **Poisson and classical bootstraps** behave like the Bayesian bootstrap in every scenario.
+
+The ratio effect $\tau_R$ is calibrated in every scenario for every correct method.
+
+Reproduce: `uv run python benchmarks/calibration.py --scenario small-strata` (and `heavy-tails`); results in `benchmarks/results/calibration-*.json`.

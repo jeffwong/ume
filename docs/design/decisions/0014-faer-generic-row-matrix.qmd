@@ -1,0 +1,23 @@
+---
+title: "0014 faer, with the engine generic over dense and sparse design matrices"
+date: 2026-10-18
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+- Rust linear algebra uses **faer** (0.24).
+- The engine is generic over a `RowMatrix` trait, the only abstraction over the design matrix $R$. It has two implementations: `Dense` (a faer matrix) and `Sparse` (a faer CSR matrix). Choosing one is a type parameter of `fit<R: RowMatrix>`, not a fork in the code.
+- The trait has exactly the products the model needs: $R^\top V R$, $R^\top V Y$, $R b$, and per-cluster sums of weighted rows.
+- The small matrices ($d \times d$, $2d \times 2d$, the covariance) are dense.
+
+## Justification
+
+Chosen by Jeffrey Wong: sparse matters for categorical covariates with many levels. faer is pure Rust, so wheels need no BLAS or LAPACK.
+
+Measured on 20,000 rows with a 50-level categorical ($d = 51$): sparse 285 ms against dense 449 ms (`make bench-rust`). Both match the numpy reference in all 16 designs (`tests/test_engine.py`).
+
+## Open
+
+A sparse Gram matrix for very wide $R$ (thousands of levels), where the dense $2d \times 2d$ and $2do \times 2do$ results themselves become large.

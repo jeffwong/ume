@@ -1,0 +1,20 @@
+---
+title: "Decisions"
+listing:
+  contents: "0*.qmd"
+  type: table
+  sort: "filename"
+  fields: [title, date, status, basis]
+  field-display-names:
+    basis: "Basis"
+---
+
+One record per major decision. Each record says what was decided, the alternatives, and the justification. The **basis** field is honest about where the decision came from:
+
+- **evidence**: measured, tested, or documented by an authority we checked.
+- **reasoning**: argued from first principles, not measured.
+- **instinct**: a judgement call with no strong argument. Revisit these first when something hurts.
+
+Records are never deleted. A reversed decision gets status `superseded` and a link to the record that replaces it.
+
+To add one, copy the most recent record, increment the number, and fill in every field.

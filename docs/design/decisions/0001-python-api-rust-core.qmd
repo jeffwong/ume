@@ -1,0 +1,24 @@
+---
+title: "0001 Python API over a Rust core"
+date: 2026-10-18
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+Users call Python. The numeric work (the one-pass compression and the bootstrap engines) runs in Rust, compiled into a Python extension module.
+
+## Alternatives
+
+- An R package with Rcpp kernels. Closest to the research code; the kernels would port directly.
+- Python with a C++ core (pybind11 or nanobind).
+- A C++ core with both R and Python bindings.
+
+## Justification
+
+Decided by Jeffrey Wong at the start of the project.
+
+- The hot loops (the per-row buffer update and the per-account flush, handoff section 5.3) are tight numeric loops. Python cannot run them at production scale (hundreds of millions of rows). A compiled kernel can.
+- Rust gives C++-level speed with memory safety and a single build tool (`cargo`). PyO3, maturin and rust-numpy are mature and give zero-copy access to numpy arrays.
+- Keeping the core in a pure Rust crate (see [0002](0002-two-crates.qmd)) leaves the door open to other front ends later: R through extendr, or a JVM UDF for Spark.

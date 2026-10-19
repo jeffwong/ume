@@ -1,0 +1,25 @@
+---
+title: "0002 Separate core and binding crates"
+date: 2026-10-18
+status: accepted
+basis: evidence
+---
+
+## Decision
+
+The Rust code is a cargo workspace with two crates:
+
+- `crates/ume-core`: pure Rust kernels with no Python dependency.
+- `crates/ume-python`: PyO3 bindings only, compiled into `ume._core`.
+
+## Alternatives
+
+One crate that holds both the kernels and the `#[pyfunction]` wrappers. This is maturin's default template.
+
+## Justification
+
+- With PyO3's `extension-module` feature, the crate does not link against libpython, so `cargo test` binaries for that crate fail to link. This is a documented PyO3 limitation. Kernels in a separate crate can be unit tested, doc tested and benchmarked with plain `cargo`.
+- The binding layer stays thin and easy to audit: convert arrays, release the GIL, call the core, map errors.
+- The core can be reused by other bindings without pulling in Python (see [0001](0001-python-api-rust-core.qmd)).
+
+Cost: one extra `Cargo.toml`. The workspace shares version, edition and lints, so the crates cannot drift apart.

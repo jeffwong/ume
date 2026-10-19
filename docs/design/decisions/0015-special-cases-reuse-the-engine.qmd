@@ -1,0 +1,24 @@
+---
+title: "0015 First stage and ITT are special cases of the same fit"
+date: 2026-10-18
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+No separate code computes the first stage or the intent to treat effect.
+
+- **First stage:** the normal equations are built from the same `Blocks` as the second stage, with the regressors $M_1$ in place of $M_2$ (that is, $T := Z$, and $S^T$ becomes $S_Z$ because $Z^2 = Z$) and the outcomes $T \cdot R$. Its robust F statistics use the same `cluster_scores` and `sandwich`, with `Scope::PerColumn`.
+- **ITT:** `fit.itt()` refits the universal model with $T := Z$. Every row is then a complier, and the effects are the covariate-adjusted ITT of each metric.
+
+## Justification
+
+This is the generalization principle applied to code: if a quantity is a special case of the model, compute it with the model. Both were approved as derivations by Jeffrey Wong on 2026-10-18.
+
+Verified:
+
+- The first-stage F times $d$ equals linearmodels' first-stage Wald statistic to 1e-8 (`test_first_stage_f_matches_linearmodels`).
+- Without covariates, the ITT equals the difference in weighted arm means (`test_itt_without_covariates_is_the_difference_in_weighted_means`).
+
+The first-stage F reported is the per-equation cluster-robust Wald F. With $d$ endogenous regressors it can overstate joint strength; the Sanderson–Windmeijer F is a TODO.

@@ -1,0 +1,28 @@
+---
+title: "0017 Compression: strata, the distinct layout, and merge checks"
+date: 2026-10-18
+status: accepted
+basis: evidence
+---
+
+## Decision
+
+- **Strata** are $(Z, \text{cohort})$; without a cohort column, just $Z$. Every cluster in a stratum shares its instrument and weight, which is what lets a compressed row stand for its clusters (handoff 5.2).
+- A compressed row stores $G_h$, $\sum u_a$ and $\sum u_a u_a^\top$ in the **distinct layout** ($S^Y$, then the upper triangles of $S$ and $S^T$), $q = do + d(d+1)$.
+- The pass is **buffer and flush**: the open cluster's summary is accumulated, then folded into its stratum when the cluster changes. Only touched entries are flushed and cleared. Batches may split a cluster; the compressor carries the open cluster across them.
+- **Contiguity** is checked exactly within a pass: a cluster key that reappears after its flush is an error.
+- **Merges** are checked exactly too: each `CompressedData` keeps the sorted keys of its clusters, and `+` refuses shards that share one.
+- Cluster keys are the integer ids, or an 8-byte BLAKE2b hash of `str(id)`, so every process computes the same key.
+- `Experiment.compress()` infers $x_{ref}$ and levels from the data in memory, and sorts by cluster if the rows are not grouped. A streaming `ume.Compressor` requires them declared.
+- The fit from compressed data is the same `assemble` as on rows; only the meat source differs ([One engine](../engine.qmd)).
+
+## Evidence
+
+- Compressed fits equal row fits in all 16 designs, dense and sparse: coefficients to about 1e-13, covariance to about 1e-15 relative, first-stage F and ITT to rounding.
+- Random shard merges and batches that split clusters equal one pass.
+- At 1M clusters (2.19M rows, $k = 5$, $o = 6$): compression 1.13 s, of which the Rust pass is about 0.66 s (the handoff's Rcpp reference is 0.56 s with $o = 5$). The fit from compressed data takes 1.2 ms.
+
+## Costs and follow-ups
+
+- The cluster keys cost 8 bytes per cluster, which is small next to the rows but not constant in size. A `keep_keys=False` option and a probabilistic check are TODOs, for platforms with very many clusters per shard.
+- A serialized storage format is not chosen yet (TODO).

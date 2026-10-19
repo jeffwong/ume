@@ -1,0 +1,15 @@
+---
+title: "Design"
+---
+
+The research posts that this library implements are written as worked examples. This section records what a production library needs on top of them: the software design, the decisions behind it, and what is still open.
+
+- [Python package with a Rust core](python-rust-core.qmd): how the package is built, and how to add a kernel.
+- [One engine](engine.qmd): how the code mirrors the generalization; the shared primitives in Rust and Python.
+- [Performance](performance.qmd): ume against the research Rcpp code at 1M accounts, by thread count.
+- [Calibration](calibration.qmd): 1,000 simulated experiments; every method's bias, SE/SD and coverage against the truth.
+- [API and engine plan (proposal)](api-plan.qmd): the user's session, the types, the single engine, the effect taxonomy, naming, tests and milestones.
+- [Decisions](decisions/index.qmd): one record per major decision, including the ones made on instinct.
+- [TODO](todo.qmd): open questions and deferred work.
+
+The mathematical spec and test oracle are in the research handoff (`LIBRARY_HANDOFF.md` in the blog repository), sections 3–7. Design documents here refer to it rather than restate it.
