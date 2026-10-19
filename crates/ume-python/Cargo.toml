@@ -1,0 +1,22 @@
+[package]
+name = "ume-python"
+description = "PyO3 bindings that expose ume-core to Python as ume._core."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+ume-core = { path = "../ume-core" }
+# abi3-py310: one wheel per platform for every Python >= 3.10 (decision 0022).
+pyo3 = { version = "0.30", features = ["extension-module", "abi3-py310"] }
+numpy = "0.30"
+faer = "0.24"
+
+[lints]
+workspace = true

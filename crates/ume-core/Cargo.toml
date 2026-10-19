@@ -1,0 +1,21 @@
+[package]
+name = "ume-core"
+description = "Numeric kernels for ume: one-pass compression and Bayesian bootstrap engines."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+faer = "0.24"
+
+[dev-dependencies]
+criterion = "0.8"
+
+[[bench]]
+name = "kernels"
+path = "../../benchmarks/rust/kernels.rs"
+harness = false
+
+[lints]
+workspace = true
