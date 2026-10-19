@@ -1,0 +1,45 @@
+# Build the documentation site and deploy it to GitHub Pages.
+# Run by the Release workflow after a PyPI publish, by scripts/release_publish.sh,
+# or by hand (Actions → Docs → Run workflow) to refresh the site from any ref.
+# One-time setup: Settings → Pages → Source: "GitHub Actions".
+name: Docs
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - uses: quarto-dev/quarto-actions/setup@v2
+      - run: uv sync --locked
+      - run: make docs
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/_site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
