@@ -15,7 +15,15 @@ from numpy.typing import NDArray
 
 @dataclass(frozen=True)
 class ReferenceFit:
-    """Coefficients $\\hat\\beta$ ($2d \\times o$) and the CR0 covariance of $\\text{vec}(\\hat\\beta)$."""
+    """The reference fit: coefficients and their CR0 covariance.
+
+    Parameters
+    ----------
+    beta : numpy.ndarray
+        Coefficients $\\hat\\beta$, shape $(2d, o)$.
+    cov : numpy.ndarray
+        CR0 covariance of $\\text{vec}(\\hat\\beta)$ (column-major), shape $(2do, 2do)$.
+    """
 
     beta: NDArray[np.float64]
     cov: NDArray[np.float64]
@@ -34,6 +42,25 @@ def fit_rows(
     $\\hat\\beta = (M_1^\\top W M_2)^{-1} M_1^\\top W Y$ with $M_1 = (R, ZR)$ and
     $M_2 = (R, TR)$; the covariance is
     $(I_o \\otimes A^{-1}) [\\sum_a s_a s_a^\\top] (I_o \\otimes A^{-1})^\\top$.
+
+    Parameters
+    ----------
+    r : numpy.ndarray
+        Design matrix $R = (1, x - x_{ref})$, shape $(n, d)$, dense.
+    z : numpy.ndarray
+        Instrument per row, shape $(n,)$.
+    t : numpy.ndarray
+        Treatment received per row, shape $(n,)$.
+    y : numpy.ndarray
+        Outcome columns, shape $(n, o)$.
+    w : numpy.ndarray
+        Row weights, shape $(n,)$.
+    cluster : numpy.ndarray
+        Cluster id per row (any values; codes are taken internally).
+
+    Returns
+    -------
+    ReferenceFit
     """
     m1 = np.hstack([r, z[:, None] * r])
     m2 = np.hstack([r, t[:, None] * r])
@@ -57,6 +84,22 @@ def complier_mean(
 
     Without encouragement ($T = Z$), the weighted mean of `x`. Otherwise the Wald
     ratio of weighted arm means of $T x$ over those of $T$.
+
+    Parameters
+    ----------
+    x : numpy.ndarray
+        Covariates per row, shape $(n, k)$ (centered or not; the result is in the same units).
+    z : numpy.ndarray
+        Instrument per row.
+    t : numpy.ndarray
+        Treatment received per row.
+    w : numpy.ndarray
+        Row weights.
+
+    Returns
+    -------
+    numpy.ndarray
+        Length $k$.
     """
     if np.array_equal(t, z):
         mean: NDArray[np.float64] = (w[:, None] * x).sum(0) / w.sum()
@@ -74,7 +117,22 @@ def complier_mean(
 def inverse_propensity_weights(
     z: NDArray[np.float64], cohort: NDArray[np.integer], cluster: NDArray[np.integer]
 ) -> NDArray[np.float64]:
-    """Row weights $1/\\hat e$ or $1/(1-\\hat e)$, with $\\hat e$ the share of a cohort's *clusters* with $Z = 1$."""
+    """Row weights $1/\\hat e$ or $1/(1-\\hat e)$, with $\\hat e$ the share of a cohort's *clusters* with $Z = 1$.
+
+    Parameters
+    ----------
+    z : numpy.ndarray
+        Instrument per row (constant within a cluster).
+    cohort : numpy.ndarray
+        Cohort per row (constant within a cluster).
+    cluster : numpy.ndarray
+        Cluster id per row.
+
+    Returns
+    -------
+    numpy.ndarray
+        One weight per row.
+    """
     _, first = np.unique(cluster, return_index=True)
     e = {c: z[first][cohort[first] == c].mean() for c in np.unique(cohort)}
     e_row = np.array([e[c] for c in cohort])
@@ -97,6 +155,28 @@ def draw_rows(
     clusters with $Z = 1$, refits the model with row weights $\\xi_a w_a(\\xi)$, and
     recomputes the compliers' mean. Returns $\\hat\\beta^{(b)}$ and $\\bar x_C^{(b)}$
     (centered).
+
+    Parameters
+    ----------
+    r : numpy.ndarray
+        Design matrix $R = (1, x - x_{ref})$, shape $(n, d)$, dense.
+    z : numpy.ndarray
+        Instrument per row.
+    t : numpy.ndarray
+        Treatment received per row.
+    y : numpy.ndarray
+        Outcome columns, shape $(n, o)$.
+    cluster : numpy.ndarray
+        Cluster code per row, in ``0..G`` (indexes `xi`).
+    cohort : numpy.ndarray or None
+        Cohort per row; None for no inverse propensity weights.
+    xi : numpy.ndarray
+        Bootstrap weight per cluster, shape $(G,)$.
+
+    Returns
+    -------
+    tuple of numpy.ndarray
+        $\\hat\\beta^{(b)}$, shape $(2d, o)$, and $\\bar x_C^{(b)} - x_{ref}$, length $k$.
     """
     groups = np.unique(cluster, return_inverse=True)[1]
     if cohort is None:

@@ -1,4 +1,20 @@
-"""Invariant 1 on rows: the Rust engine equals the numpy reference, which equals the textbook."""
+"""Invariant 1 on rows: the universal model's coefficients and covariance are right.
+
+The Rust engine fits weighted two stage least squares with every covariate
+interacted with treatment and a cluster-robust (CR0) covariance. These tests
+check it in all 16 designs of the CSS post (encouragement × clusters × ramp ×
+metric, see ``designs.py``) against two independent oracles:
+
+1. the numpy reference implementation in ``ume.testing.reference``, which builds
+   $M_1$ and $M_2$ explicitly and follows the CSS post's formulas, to rounding
+   error (1e-10);
+2. textbook 2SLS from linearmodels (``IV2SLS`` with a clustered or robust
+   covariance and no small-sample correction), whose coefficient on $T$ is the
+   effect when the covariates are centered at the compliers' mean.
+
+They also check that each design's features are detected from the data, and
+that the inverse propensity weights match the reference.
+"""
 
 from __future__ import annotations
 
@@ -21,11 +37,15 @@ def case(request: pytest.FixtureRequest) -> Case:
 
 
 def dense(r: np.ndarray | CSR) -> np.ndarray:
+    """The design matrix as a dense array."""
     return r.toarray() if isinstance(r, CSR) else r
 
 
 @pytest.mark.parametrize("sparse", [False, True], ids=["dense", "sparse"])
 def test_engine_matches_reference(case: Case, sparse: bool) -> None:
+    """The Rust fit, with a dense and with a sparse design matrix, equals the numpy reference 2SLS: coefficients,
+    CR0 covariance and the compliers' mean.
+    """
     exp = case.experiment()
     data = model_data(exp.frame, exp.design, sparse=sparse)
     assert data.sparse is sparse
@@ -38,6 +58,9 @@ def test_engine_matches_reference(case: Case, sparse: bool) -> None:
 
 
 def test_features_are_detected(case: Case) -> None:
+    """Each design's special case (encouragement, clusters, adaptive assignment), its estimand and its covariance
+    type are read correctly from the data.
+    """
     f = case.experiment().features()
     assert (f.encouraged, f.clustered, f.adaptive) == (case.encouraged, case.clustered, case.ramp)
     assert f.estimand == ("LATE" if case.encouraged else "ATE")
@@ -45,6 +68,9 @@ def test_features_are_detected(case: Case) -> None:
 
 
 def test_weights_match_reference(case: Case) -> None:
+    r"""Inverse propensity weights are $1/\hat e$ or $1/(1 - \hat e)$, with $\hat e$ each cohort's share of clusters
+    with $Z = 1$; all 1 without a cohort column.
+    """
     exp = case.experiment()
     data = model_data(exp.frame, exp.design)
     if not case.ramp:
@@ -79,6 +105,9 @@ def textbook(case: Case, outcome: np.ndarray, data, x_c: np.ndarray) -> tuple[fl
 
 
 def test_effects_match_textbook(case: Case) -> None:
+    """The effect and its standard error equal linearmodels' coefficient on $T$ and its standard error; the ratio
+    effect equals the one computed from linearmodels' four separate fits.
+    """
     exp = case.experiment()
     fit = exp.fit()
     data = model_data(exp.frame, exp.design)

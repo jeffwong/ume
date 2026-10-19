@@ -247,6 +247,8 @@ pub fn fit_draws(
 
 #[cfg(test)]
 mod tests {
+    //! The draw engines: multinomial draws keep the number of clusters, and Gaussian draws have the compressed row's moments.
+
     use super::*;
     use crate::compress::Compressor;
     use crate::rows::Dense;
@@ -262,6 +264,7 @@ mod tests {
         (r, t, y, vec![1, 1, 2, 3, 3, 4], vec![1, 1, 0, 1, 1, 0])
     }
 
+    /// In every multinomial draw, the strata's total weights sum to the number of clusters.
     #[test]
     fn multinomial_draws_keep_the_number_of_clusters() {
         let (r, t, y, keys, strata) = pass_inputs();
@@ -281,6 +284,7 @@ mod tests {
         assert_eq!(compressed.strata.len(), draws.strata.len());
     }
 
+    /// Gaussian draws of a stratum's sum have the compressed row's mean and variance (checked on the count entry).
     #[test]
     fn gaussian_draws_have_the_compressed_moments() {
         let (r, t, y, keys, strata) = pass_inputs();

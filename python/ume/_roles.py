@@ -57,6 +57,12 @@ class Covariates:
     """The covariates of a design, in order, each with its specification.
 
     Build with :func:`ume.covariates`.
+
+    Parameters
+    ----------
+    specs : tuple of (str, Numeric or Categorical)
+        Each covariate's column name and specification, in the order of the
+        columns of $x$.
     """
 
     specs: tuple[tuple[str, Spec], ...] = ()
@@ -98,7 +104,19 @@ class Covariates:
         return all((s.x_ref is not None) if isinstance(s, Numeric) else (s.levels is not None) for _, s in self.specs)
 
     def replace_spec(self, name: str, spec: Spec) -> Covariates:
-        """Return a copy with the specification of `name` replaced."""
+        """Return a copy with the specification of `name` replaced.
+
+        Parameters
+        ----------
+        name : str
+            The covariate to change.
+        spec : Numeric or Categorical
+            Its new specification.
+
+        Returns
+        -------
+        Covariates
+        """
         return replace(self, specs=tuple((n, spec if n == name else s) for n, s in self.specs))
 
 

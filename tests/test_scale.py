@@ -1,4 +1,18 @@
-"""Milestone 5: threads, lazy frames, streams of batches, and storage."""
+"""Milestone 5: the results do not depend on how the rows are read.
+
+The same rows read through threads, lazy frames, streams of batches, saved files
+or shards must give the same fit, draws and effects as one pass in memory. These
+tests cover:
+
+- ``ume.design``;
+- the thread count: results agree across 1 to 4 threads, and multinomial draws are identical;
+- polars LazyFrames: shuffled Parquet streamed in batches, reference points and
+  levels resolved lazily, ``presorted``;
+- streams of batches, and what they require: a declared design, reiterability
+  for two passes, the number of clusters for the multinomial bootstrap;
+- storage: save and load round trips, and saved shards that merge;
+- merging exact-bootstrap sums of shards.
+"""
 
 from __future__ import annotations
 
@@ -34,11 +48,13 @@ def parquet(df: pl.DataFrame, tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 
 def assert_same(a: ume.UniversalFit, b: ume.UniversalFit) -> None:
+    """Assert that two fits have the same coefficients and covariance."""
     np.testing.assert_allclose(a.beta, b.beta, rtol=1e-10, atol=1e-12)
     np.testing.assert_allclose(a.cov, b.cov, rtol=1e-9, atol=1e-15)
 
 
 def test_design_without_data_equals_the_annotated_design(df: pl.DataFrame, design: ume.Design) -> None:
+    """``ume.design`` builds the same Design as ``annotate`` on a frame."""
     exp = ume.annotate(df, cluster="account", instrument="Z", treatment="T", cohort="day", covariates=COV)
     assert exp.metrics(*METRICS).design == design
 
@@ -48,6 +64,9 @@ def test_design_without_data_equals_the_annotated_design(df: pl.DataFrame, desig
 
 @pytest.mark.parametrize("threads", [2, 3, 4])
 def test_results_do_not_depend_on_threads(df: pl.DataFrame, design: ume.Design, threads: int) -> None:
+    """Compression, the Bayesian and multinomial bootstraps, and two-pass effects agree across thread counts; the
+    multinomial draws exactly, since they run on one worker.
+    """
     exp = design.bind(df)
     try:
         ume.set_threads(1)
@@ -63,6 +82,7 @@ def test_results_do_not_depend_on_threads(df: pl.DataFrame, design: ume.Design, 
 
 
 def test_thread_setting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``UME_THREADS`` sets the default thread count, and fewer than 1 thread is rejected."""
     monkeypatch.setenv("UME_THREADS", "3")
     assert ume.get_threads() == 3
     with pytest.raises(ValueError, match="at least 1"):
@@ -73,6 +93,9 @@ def test_thread_setting(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_a_lazy_frame_streams_to_the_same_results(df: pl.DataFrame, design: ume.Design, parquet: Path) -> None:
+    """A shuffled Parquet file read lazily, in small batches, gives the in-memory compression, bootstrap, two-pass
+    effects and row fit.
+    """
     eager, lazy = design.bind(df), design.bind(pl.scan_parquet(parquet))
     assert lazy.lazy and not eager.lazy
     assert_same(lazy.compress(batch_size=1500).fit(), eager.compress().fit())
@@ -90,6 +113,9 @@ def test_a_lazy_frame_streams_to_the_same_results(df: pl.DataFrame, design: ume.
 
 
 def test_lazy_frames_resolve_reference_points(df: pl.DataFrame, parquet: Path) -> None:
+    """Undeclared reference points and levels of a lazy frame are resolved by aggregation: the column mean and the
+    sorted levels.
+    """
     cov = ume.covariates("x1", device=ume.categorical(reference="tv"))
     exp = ume.annotate(pl.scan_parquet(parquet), cluster="account", treatment="T", instrument="Z", covariates=cov)
     cd = exp.metrics(ume.mean("y")).compress()
@@ -99,6 +125,9 @@ def test_lazy_frames_resolve_reference_points(df: pl.DataFrame, parquet: Path) -
 
 
 def test_presorted_skips_the_sort_and_is_checked(df: pl.DataFrame, design: ume.Design, parquet: Path) -> None:
+    """``presorted=True`` skips the sort for grouped rows, and a wrong ``presorted=True`` is caught as
+    non-contiguous rows.
+    """
     sorted_lf = pl.scan_parquet(parquet).sort("account")
     assert_same(design.bind(sorted_lf).compress(presorted=True).fit(), design.bind(df).compress().fit())
     with pytest.raises(ValueError, match="not contiguous"):
@@ -116,6 +145,9 @@ def batches(df: pl.DataFrame, size: int = 1234) -> Iterator[pl.DataFrame]:
 
 
 def test_a_stream_of_batches(df: pl.DataFrame, design: ume.Design) -> None:
+    """An iterable of batches with a declared design gives the in-memory compression and bootstrap; a function
+    returning batches serves two-pass effects.
+    """
     assert_same(ume.compress(batches(df), design).fit(), design.bind(df).compress().fit())
     draws = ume.bootstrap(batches(df), design, B=10, seed=1)
     np.testing.assert_allclose(draws.beta, design.bind(df).bootstrap(10, seed=1).beta, rtol=1e-10, atol=1e-12)
@@ -126,6 +158,9 @@ def test_a_stream_of_batches(df: pl.DataFrame, design: ume.Design) -> None:
 
 
 def test_streams_need_a_declared_design_and_reiterability(df: pl.DataFrame, design: ume.Design) -> None:
+    """Streams are refused when the design is not declared, when two passes would read a one-shot iterator twice,
+    or when the multinomial bootstrap needs the cluster count.
+    """
     undeclared = ume.design(cluster="account", instrument="Z", treatment="T", covariates=["x1"], metrics=METRICS)
     with pytest.raises(ValueError, match="declared before the pass"):
         ume.compress(batches(df), undeclared)
@@ -139,6 +174,7 @@ def test_streams_need_a_declared_design_and_reiterability(df: pl.DataFrame, desi
 
 
 def test_save_and_load(df: pl.DataFrame, design: ume.Design, tmp_path: Path) -> None:
+    """A saved compressed dataset loads back with the same design, strata, rows, cluster keys and fit."""
     cd = design.bind(df).compress()
     cd.save(tmp_path / "cd.npz")
     back = ume.load(tmp_path / "cd.npz")
@@ -148,6 +184,7 @@ def test_save_and_load(df: pl.DataFrame, design: ume.Design, tmp_path: Path) -> 
 
 
 def test_saved_shards_merge(df: pl.DataFrame, design: ume.Design, tmp_path: Path) -> None:
+    """Shards saved and loaded separately merge to the whole, and a shard merged with itself is refused."""
     for k in range(3):
         ume.compress(df.filter(pl.col("account") % 3 == k), design).save(tmp_path / f"shard{k}.npz")
     shards = [ume.load(tmp_path / f"shard{k}.npz") for k in range(3)]
@@ -157,6 +194,7 @@ def test_saved_shards_merge(df: pl.DataFrame, design: ume.Design, tmp_path: Path
 
 
 def test_load_rejects_other_files(tmp_path: Path) -> None:
+    """``ume.load`` refuses files that are not ume compressed datasets."""
     np.savez(tmp_path / "other.npz", meta=np.array('{"format": "something else"}'))
     with pytest.raises(ValueError, match="not a ume compressed dataset"):
         ume.load(tmp_path / "other.npz")
@@ -167,6 +205,9 @@ def test_load_rejects_other_files(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("weights", ["bayesian", "poisson"])
 def test_bootstrap_sums_of_shards_merge(df: pl.DataFrame, design: ume.Design, weights: str) -> None:
+    """Exact-bootstrap sums of three shards, merged and fit once, equal the bootstrap of all rows (Bayesian and
+    Poisson weights).
+    """
     shards = [ume.bootstrap_sums(df.filter(pl.col("account") % 3 == k), design, B=25, weights=weights, seed=8)
               for k in range(3)]  # fmt: skip
     merged = (shards[0] + shards[1] + shards[2]).draws()
@@ -176,6 +217,7 @@ def test_bootstrap_sums_of_shards_merge(df: pl.DataFrame, design: ume.Design, we
 
 
 def test_bootstrap_sums_refuse_bad_merges(df: pl.DataFrame, design: ume.Design) -> None:
+    """Merging bootstrap sums is refused for different seeds, for shared clusters, and for multinomial weights."""
     a = ume.bootstrap_sums(df.filter(pl.col("account") % 2 == 0), design, B=5, seed=1)
     b = ume.bootstrap_sums(df.filter(pl.col("account") % 2 == 1), design, B=5, seed=2)
     with pytest.raises(ValueError, match="seeds"):

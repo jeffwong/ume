@@ -32,7 +32,32 @@ def simulate_columns(
     one_profile: bool = False,
     heavy_tail: float = 0.0,
 ) -> dict[str, NDArray[Any]]:
-    """Simulate profile rows as a dict of numpy columns. See :func:`simulate_accounts`."""
+    """Simulate profile rows as a dict of numpy columns.
+
+    The same data as :func:`simulate_accounts`, without building a frame.
+
+    Parameters
+    ----------
+    n_accounts : int
+        Number of accounts (clusters).
+    propensity : tuple of float
+        Propensity of $Z = 1$ for each day.
+    seed : int or numpy.random.Generator
+        Random seed.
+    force_z : {0, 1}, optional
+        Assign every account to this arm (for computing the truth).
+    full_compliance : bool
+        $T = Z$: no encouragement.
+    one_profile : bool
+        One profile per account: no clusters.
+    heavy_tail : float
+        Scale of an account-level Student-t(2.5) shock to hours; 0 adds none.
+
+    Returns
+    -------
+    dict of numpy.ndarray
+        One array per column, as in :func:`simulate_accounts`.
+    """
     rng = np.random.default_rng(seed)
     n_days = len(propensity)
     day_prob = np.arange(n_days, 0, -1, dtype=np.float64)
@@ -152,6 +177,18 @@ def truth(seed: int = 1, n_accounts: int = 1_000_000) -> dict[str, float]:
     profiles are compliers in both. Returns the effect on compliers' hours
     $\\tau_{LATE}$, on their rebuffers per play $\\tau_R$, and the relative effect
     $\\rho_R$.
+
+    Parameters
+    ----------
+    seed : int
+        Seed of both worlds (the same accounts in each).
+    n_accounts : int
+        Accounts per world; larger means less simulation noise in the truth.
+
+    Returns
+    -------
+    dict of float
+        ``tau_LATE``, ``tau_R`` and ``rho_R``.
     """
     p1 = simulate_columns(n_accounts, seed=seed, force_z=1)
     p0 = simulate_columns(n_accounts, seed=seed, force_z=0)

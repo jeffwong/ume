@@ -358,6 +358,22 @@ def design(
     reference point and categorical level, because they must be fixed before the
     pass.
 
+    Parameters
+    ----------
+    cluster : str
+        The unit of randomization and of independence.
+    instrument : str, optional
+        The randomized assignment $Z$ (0/1, constant within a cluster).
+    treatment : str, optional
+        The treatment received $T$ (0/1). Give the treatment, the instrument, or both.
+    cohort : str, optional
+        Cells within which $Z$ is randomized with one propensity.
+    covariates : Covariates or list of str, optional
+        From :func:`ume.covariates`; a list of names means numeric covariates
+        whose reference points are resolved from data.
+    metrics : sequence of Mean or Ratio
+        The metrics to analyze.
+
     Returns
     -------
     Design

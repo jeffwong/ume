@@ -15,6 +15,7 @@ test-python: build
 	uv run pytest
 
 lint:
+	uv run python scripts/check_docstrings.py
 	uv run ruff check .
 	uv run ruff format --check .
 	uv run mypy

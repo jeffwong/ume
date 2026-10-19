@@ -43,7 +43,16 @@ SMALL_STRATUM = 200
 
 
 class Stratum(NamedTuple):
-    """A stratum: the instrument arm and the cohort. ``cohort`` is None without a cohort column."""
+    """A stratum: an instrument arm within a cohort. Every cluster in it has the same weight.
+
+    Parameters
+    ----------
+    Z : int
+        The instrument arm, 0 or 1.
+    cohort : object, optional
+        The cohort label, a value of the design's cohort column; None when the
+        design has no cohort column.
+    """
 
     Z: int
     cohort: Any = None
@@ -55,6 +64,22 @@ def _row_labels(design: Design) -> list[str]:
 
 class CompressedRow:
     """The compressed row of one stratum.
+
+    Made by indexing :class:`CompressedData` with a :class:`Stratum`; rarely
+    built directly.
+
+    Parameters
+    ----------
+    stratum : Stratum
+        The stratum the row belongs to.
+    g : float
+        Its number of clusters $G_h$.
+    first : numpy.ndarray
+        $\\sum_{a \\in h} u_a$, length $q$, in the distinct layout.
+    second : numpy.ndarray
+        $\\sum_{a \\in h} u_a u_a^\\top$, shape $(q, q)$.
+    design : Design
+        The resolved design, which labels the entries.
 
     Attributes
     ----------
@@ -112,8 +137,27 @@ class CompressedData(Mapping[Stratum, CompressedRow]):
     like a dictionary of sufficient statistics. Its size does not depend on the
     number of rows. Fitting it gives exactly the fit on the rows.
 
-    Made by :meth:`ume.Experiment.compress` or :meth:`ume.Compressor.finish`.
+    Made by :meth:`ume.Experiment.compress`, :func:`ume.compress`,
+    :meth:`ume.Compressor.finish` or :func:`ume.load`, rather than built directly.
     Merge shards with ``+``.
+
+    Parameters
+    ----------
+    design : Design
+        The resolved design: roles, reference points, levels and metrics.
+    strata : list of Stratum
+        The strata, one per compressed row.
+    g : numpy.ndarray
+        Clusters per stratum $G_h$, shape $(H,)$.
+    first : numpy.ndarray
+        First moments $\\sum_{a \\in h} u_a$ per stratum, shape $(H, q)$.
+    second : numpy.ndarray
+        Second moments $\\sum_{a \\in h} u_a u_a^\\top$ per stratum, shape $(H, q, q)$.
+    n_rows : int
+        Number of rows compressed.
+    cluster_keys : numpy.ndarray, optional
+        Sorted 64-bit keys of the clusters compressed. With them, ``+`` refuses
+        shards that share a cluster; without them it cannot check.
     """
 
     def __init__(
@@ -321,6 +365,15 @@ class CompressedData(Mapping[Stratum, CompressedRow]):
     def __add__(self, other: CompressedData) -> CompressedData:
         """Merge two shards: add the compressed rows of each stratum.
 
+        Parameters
+        ----------
+        other : CompressedData
+            The other shard, compressed with the same design.
+
+        Returns
+        -------
+        CompressedData
+
         Raises
         ------
         ValueError
@@ -383,6 +436,15 @@ FORMAT_VERSION = 1
 
 def load(path: str | os.PathLike[str]) -> CompressedData:
     """Load a compressed dataset saved with :meth:`CompressedData.save`.
+
+    Parameters
+    ----------
+    path : str or path-like
+        The ``.npz`` file.
+
+    Returns
+    -------
+    CompressedData
 
     Raises
     ------
@@ -628,6 +690,44 @@ def early_effects(
     return EffectTable(rows, summary, features.estimand, method)  # type: ignore[arg-type]
 
 
+def effects(
+    rows: Any,
+    design: Design,
+    *effects: AnyEffect,
+    at: Mapping[str, Any] | None = None,
+    se: str = "sandwich",
+    sparse: SparseOption = "auto",
+    **source_options: Any,
+) -> EffectTable:
+    """Effects and standard errors of rows in two passes, without second moments.
+
+    The streaming form of :meth:`ume.Experiment.effects` (delta vectors early).
+
+    Parameters
+    ----------
+    rows : DataFrame, LazyFrame, or a function returning an iterable of frames
+        The rows. They are read twice, so a plain iterator is not enough: pass a
+        function that returns fresh batches.
+    design : Design
+        The roles and metrics.
+    *effects : Effect or CustomEffect
+        Defaults to the difference and the relative effect of every metric.
+    at : mapping, optional
+        A segment to read the effects at.
+    se : {"sandwich", "linearized"}
+        The standard error.
+    sparse : bool or "auto"
+        Dense or sparse design matrix in each batch.
+    **source_options
+        ``batch_size`` and ``presorted``, as in :func:`ume.compress`.
+
+    Returns
+    -------
+    EffectTable
+    """
+    return early_effects(rows, design, effects, at, se, sparse, **source_options)
+
+
 def compress(rows: Any, design: Design, sparse: SparseOption = "auto", **source_options: Any) -> CompressedData:
     """Compress rows (a frame, a lazy frame, or batches) in one pass.
 
@@ -665,9 +765,31 @@ def bootstrap(
 ) -> Draws:
     """The exact bootstrap of rows (a frame, a lazy frame, or batches): one pass for all draws.
 
-    The multinomial (classical) bootstrap needs the number of clusters before
-    the pass, so it needs a frame or a lazy frame. For shards processed
-    separately, use :func:`ume.bootstrap_sums`, merge, then fit.
+    The streaming form of :meth:`ume.Experiment.bootstrap`. The multinomial
+    (classical) bootstrap needs the number of clusters before the pass, so it
+    needs a frame or a lazy frame. For shards processed separately, use
+    :func:`ume.bootstrap_sums`, merge, then fit.
+
+    Parameters
+    ----------
+    rows : DataFrame, LazyFrame, iterable of frames, or a function returning one
+        The rows, as in :func:`ume.compress`.
+    design : Design
+        The roles and metrics.
+    B : int
+        Number of draws.
+    weights : {"bayesian", "poisson", "multinomial"}
+        The weight scheme: Exp(1), Poisson(1), or multinomial counts over the clusters.
+    seed : int
+        Seed of the weight streams.
+    sparse : bool or "auto"
+        Dense or sparse design matrix in each batch.
+    **source_options
+        ``batch_size`` and ``presorted``, as in :func:`ume.compress`.
+
+    Returns
+    -------
+    Draws
     """
     return bootstrap_sums(rows, design, B, weights, seed, sparse, **source_options).draws()
 
@@ -687,6 +809,23 @@ def bootstrap_sums(
     results with ``+``; then call ``.draws()``. Each cluster's weights depend only
     on (seed, cluster, draw), so the merged sums equal one pass over all rows.
     Only independent weights (``"bayesian"``, ``"poisson"``) can be merged.
+
+    Parameters
+    ----------
+    rows : DataFrame, LazyFrame, iterable of frames, or a function returning one
+        One shard's rows, as in :func:`ume.compress`.
+    design : Design
+        The roles and metrics, the same for every shard.
+    B : int
+        Number of draws, the same for every shard.
+    weights : {"bayesian", "poisson", "multinomial"}
+        The weight scheme, the same for every shard.
+    seed : int
+        Seed of the weight streams, the same for every shard.
+    sparse : bool or "auto"
+        Dense or sparse design matrix in each batch.
+    **source_options
+        ``batch_size`` and ``presorted``, as in :func:`ume.compress`.
 
     Returns
     -------
@@ -713,5 +852,6 @@ __all__ = [
     "bootstrap_sums",
     "compress",
     "early_effects",
+    "effects",
     "load",
 ]

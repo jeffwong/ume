@@ -220,6 +220,8 @@ impl RowMatrix for Sparse<'_> {
 
 #[cfg(test)]
 mod tests {
+    //! Dense and sparse design matrices are interchangeable: every product the engine uses gives the same result for both (the claim of decision 0014).
+
     use super::*;
 
     /// A 4 × 3 matrix with an intercept, a numeric column and an indicator.
@@ -254,6 +256,7 @@ mod tests {
         }
     }
 
+    /// Every RowMatrix product (Gram, cross product, product, group sums, a column) is the same for dense and sparse storage.
     #[test]
     fn dense_and_sparse_agree_on_every_product() {
         let dense = Dense::from_row_major(&VALUES, 4, 3);
@@ -273,6 +276,7 @@ mod tests {
         assert_eq!(dense.column(1), sparse.column(1));
     }
 
+    /// The weighted Gram matrix's entries are the weighted sums they are defined as.
     #[test]
     fn weighted_gram_matches_definition() {
         let dense = Dense::from_row_major(&VALUES, 4, 3);

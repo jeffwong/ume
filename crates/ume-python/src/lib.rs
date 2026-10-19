@@ -287,28 +287,33 @@ fn inverse_propensity<'py>(
 
 // ---- compression --------------------------------------------------------------------------------
 
-/// One pass over rows grouped by cluster, to compressed rows per stratum.
-///
-/// Feed batches with ``update_dense`` or ``update_sparse``; rows of a cluster
-/// must be contiguous, possibly across batches. ``finish`` returns the
-/// compressed rows. Low-level kernel behind ``Experiment.compress`` and
-/// ``ume.Compressor``.
-///
-/// Parameters
-/// ----------
-/// d : int
-///     Columns of the design matrix.
-/// o : int
-///     Outcome columns.
-/// threads : int
-///     Worker threads; clusters are routed to workers by key hash and merged at the end.
 macro_rules! pass_class {
     ($ty:ty, { $($own:tt)* }) => {
         #[pymethods]
         impl $ty {
             $($own)*
 
-            /// Adds a batch of rows with a dense design matrix (see ``Compressor.update_dense``).
+            /// Adds a batch of rows with a dense design matrix.
+            ///
+            /// Rows of a cluster must be contiguous, possibly across batches.
+            ///
+            /// Parameters
+            /// ----------
+            /// r : numpy.ndarray
+            ///     Design matrix rows ``(1, x - x_ref)``, float64, shape ``(n, d)``.
+            /// t : numpy.ndarray
+            ///     Treatment received, float64, shape ``(n,)``.
+            /// y : numpy.ndarray
+            ///     Outcome columns, float64, shape ``(n, o)``.
+            /// keys : numpy.ndarray
+            ///     Cluster key of each row, uint64.
+            /// strata : numpy.ndarray
+            ///     Stratum index of each row, uint32.
+            ///
+            /// Raises
+            /// ------
+            /// ValueError
+            ///     If the shapes disagree, or a cluster's rows are not contiguous or change stratum.
             #[pyo3(signature = (r, t, y, keys, strata))]
             fn update_dense(
                 &mut self,
@@ -326,7 +331,31 @@ macro_rules! pass_class {
                 pass_dense(py, state, r, t, y, keys, strata)
             }
 
-            /// Adds a batch of rows with a sparse design matrix (see ``Compressor.update_sparse``).
+            /// Adds a batch of rows with a sparse (CSR) design matrix.
+            ///
+            /// Parameters
+            /// ----------
+            /// indptr : numpy.ndarray
+            ///     CSR row pointers, length ``n + 1``, uint64.
+            /// indices : numpy.ndarray
+            ///     CSR column indices, uint64.
+            /// data : numpy.ndarray
+            ///     CSR values, float64.
+            /// ncols : int
+            ///     Columns ``d`` of the design matrix.
+            /// t : numpy.ndarray
+            ///     Treatment received, float64, shape ``(n,)``.
+            /// y : numpy.ndarray
+            ///     Outcome columns, float64, shape ``(n, o)``.
+            /// keys : numpy.ndarray
+            ///     Cluster key of each row, uint64.
+            /// strata : numpy.ndarray
+            ///     Stratum index of each row, uint32.
+            ///
+            /// Raises
+            /// ------
+            /// ValueError
+            ///     If the CSR arrays or shapes are invalid, or a cluster's rows are not contiguous.
             #[pyo3(signature = (indptr, indices, data, ncols, t, y, keys, strata))]
             #[allow(clippy::too_many_arguments)]
             fn update_sparse(
@@ -351,6 +380,21 @@ macro_rules! pass_class {
     };
 }
 
+/// One pass over rows grouped by cluster, to compressed rows per stratum.
+///
+/// Feed batches with ``update_dense`` or ``update_sparse``; rows of a cluster
+/// must be contiguous, possibly across batches. ``finish`` returns the
+/// compressed rows. Low-level kernel behind ``Experiment.compress`` and
+/// ``ume.Compressor``.
+///
+/// Parameters
+/// ----------
+/// d : int
+///     Columns of the design matrix.
+/// o : int
+///     Outcome columns.
+/// threads : int
+///     Worker threads; clusters are routed to workers by key hash and merged at the end.
 #[pyclass(name = "Compressor", module = "ume._core")]
 struct PyCompressor {
     inner: Option<ParallelPass<MomentsFold>>,
@@ -932,6 +976,8 @@ fn fit_draws<'py>(
 /// ----------
 /// d, o : int
 ///     Columns of the design matrix and outcome columns.
+/// threads : int
+///     Worker threads; clusters are routed to workers by key hash and merged at the end.
 #[pyclass(name = "FirstMomentsPass", module = "ume._core")]
 struct PyFirstMomentsPass {
     inner: Option<ParallelPass<FirstMomentsFold>>,
@@ -978,6 +1024,8 @@ pass_class!(PyFirstMomentsPass, {
 /// projections : numpy.ndarray
 ///     ``c_h`` of each effect, shape ``(H, E, 1 + q)``, indexed by the stratum
 ///     indices of pass 1.
+/// threads : int
+///     Worker threads; clusters are routed to workers by key hash and merged at the end.
 #[pyclass(name = "ScorePass", module = "ume._core")]
 struct PyScorePass {
     inner: Option<ParallelPass<ScoreFold>>,

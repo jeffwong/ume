@@ -26,7 +26,26 @@ class DrawSums:
     after merging, because a draw's propensities use the total weight of each
     whole cohort.
 
-    Made by :func:`ume.bootstrap_sums`.
+    Made by :func:`ume.bootstrap_sums`, rather than built directly.
+
+    Parameters
+    ----------
+    design : Design
+        The resolved design.
+    strata : list of Stratum
+        The strata, one per block of sums.
+    sums : numpy.ndarray
+        Shape $(H, B, 1 + q)$: row $b$ of stratum $h$ is $\\sum_{a \\in h} \\xi^{(b)}_a v_a$.
+    n_rows : int
+        Number of rows read.
+    weights : str
+        The weight scheme: ``"bayesian"``, ``"poisson"`` or ``"multinomial"``.
+    seed : int
+        Seed of the weight streams.
+    encouraged : bool
+        Whether some row had $T \\ne Z$ (it decides how $\\bar x_C$ is computed).
+    cluster_keys : numpy.ndarray, optional
+        Sorted keys of the clusters read, to refuse shards that share a cluster.
     """
 
     def __init__(
@@ -56,6 +75,15 @@ class DrawSums:
 
     def __add__(self, other: DrawSums) -> DrawSums:
         """Merge the sums of two shards.
+
+        Parameters
+        ----------
+        other : DrawSums
+            The other shard's sums.
+
+        Returns
+        -------
+        DrawSums
 
         Raises
         ------

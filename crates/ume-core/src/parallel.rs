@@ -105,11 +105,14 @@ impl<F: Fold + Merge + Send> ParallelPass<F> {
 
 #[cfg(test)]
 mod tests {
+    //! A pass on several threads equals the sequential pass, including batches whose boundaries fall inside a cluster.
+
     use super::*;
     use crate::compress::Compressor;
     use crate::rows::Dense;
     use faer::Mat;
 
+    /// Four workers, over two batches with a cluster split between them, give the sequential pass's compressed rows.
     #[test]
     fn a_parallel_pass_equals_the_sequential_one() {
         let n = 400;

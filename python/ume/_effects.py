@@ -67,15 +67,41 @@ class Levels:
         self.layout = layout
 
     def line(self, column: str, treated: bool = False) -> Any:
-        """The treatment line of `column` (or $T \\cdot$ `column`) at the point, $\\delta^\\top\\hat\\beta$."""
+        """The treatment line of `column` (or $T \\cdot$ `column`) at the point, $\\delta^\\top\\hat\\beta$.
+
+        Parameters
+        ----------
+        column : str
+            A metric column of the design.
+        treated : bool
+            Read the line of $T \\cdot$ `column` instead of `column`.
+
+        Returns
+        -------
+        float or numpy.ndarray
+            One value, or one per draw.
+        """
         return np.sum(self.delta * self.beta[..., :, self.layout.index(column, treated)], axis=-1)
 
     def mu1(self, column: str | None) -> Any:
-        """$\\mu_1$: the compliers' mean of `column` with treatment. 1 for the constant (`None`)."""
+        """$\\mu_1$: the compliers' mean of `column` with treatment. 1 for the constant (`None`).
+
+        Parameters
+        ----------
+        column : str or None
+            A metric column of the design, or None for the constant 1 (the
+            denominator of a mean metric).
+        """
         return 1.0 if column is None else self.line(column, treated=True)
 
     def mu0(self, column: str | None) -> Any:
-        """$\\mu_0$: the compliers' mean of `column` without treatment. 1 for the constant (`None`)."""
+        """$\\mu_0$: the compliers' mean of `column` without treatment. 1 for the constant (`None`).
+
+        Parameters
+        ----------
+        column : str or None
+            A metric column of the design, or None for the constant 1.
+        """
         return 1.0 if column is None else self.line(column, treated=True) - self.line(column)
 
 
@@ -104,7 +130,15 @@ class Effect:
         return self.metric.name
 
     def statistic(self, levels: Levels, t: int) -> Any:
-        """$m_t = \\mu_t(N) / \\mu_t(D)$."""
+        """$m_t = \\mu_t(N) / \\mu_t(D)$, the metric under treatment $t$.
+
+        Parameters
+        ----------
+        levels : Levels
+            The compliers' levels at the population's point.
+        t : {0, 1}
+            Without (0) or with (1) treatment.
+        """
         mu = levels.mu1 if t == 1 else levels.mu0
         return mu(self.metric.numerator) / mu(self.metric.denominator)
 
@@ -126,6 +160,8 @@ class CustomEffect:
         (arithmetic, numpy functions), so that complex-step gradients work.
     at : mapping, optional
         A segment, as in :class:`Effect`.
+    contrast : str
+        The label shown in the contrast column of effect tables; ``"custom"`` by default.
     """
 
     name: str

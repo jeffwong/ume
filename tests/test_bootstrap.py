@@ -1,4 +1,20 @@
-"""Invariants 3 to 7: identity draw, exact equals rows, weight streams, moments identity, linearization."""
+"""Invariants 3 to 7 of the bootstrap engines (handoff, section 7).
+
+A bootstrap draw refits the universal model with one weight per cluster. These
+tests check:
+
+- **the weights**: the Philox streams equal numpy's bit for bit; Exp(1),
+  Poisson(1) and multinomial weights have the right moments; a weight depends
+  only on the seed, the cluster and the draw;
+- **invariant 3**: unit weights reproduce the point estimate;
+- **invariant 4**: the exact one-pass engine equals refits on the rows with the
+  same weights, for all three schemes;
+- **invariant 6**: a compressed row holds the first two moments of the weighted sums;
+- **invariant 7**: posterior standard deviations agree with the sandwich standard
+  error in the 8 mean-metric designs, for the exact and the Gaussian engines;
+- **the Draws API**: probabilities, segments, dropped degenerate draws, the
+  small-strata warning.
+"""
 
 from __future__ import annotations
 
@@ -24,6 +40,9 @@ def exp() -> ume.Experiment:
 
 
 def test_bayesian_weights_match_numpy_philox_bit_for_bit() -> None:
+    r"""The Exp(1) weights are $-\log U$ with $U$ from Philox4x64-10, the same bits as numpy's Philox at the same
+    key and counter (decision 0018).
+    """
     seed, keys, b = 2026, np.array([1, 7, 123456789, 2**63 + 5], dtype=np.uint64), 12
     ours = _core.bootstrap_weights(keys, b, seed, "bayesian")
     for i, key in enumerate(keys):
@@ -37,6 +56,9 @@ def test_bayesian_weights_match_numpy_philox_bit_for_bit() -> None:
 
 
 def test_weights_have_the_right_moments() -> None:
+    """Exp(1) and Poisson(1) weights have mean 1, variance 1 and third central moments 2 and 1; multinomial counts
+    sum to the number of clusters.
+    """
     keys = np.arange(200_000, dtype=np.uint64)
     for scheme, third in [("bayesian", 2.0), ("poisson", 1.0)]:
         w = _core.bootstrap_weights(keys, 1, 3, scheme)[:, 0]
@@ -48,6 +70,7 @@ def test_weights_have_the_right_moments() -> None:
 
 
 def test_weights_depend_only_on_seed_cluster_and_draw(exp: ume.Experiment) -> None:
+    """Shuffling the rows does not change the draws, and a different seed does."""
     shuffled = ume.Experiment(exp.frame.sample(fraction=1.0, shuffle=True, seed=4), exp.design)
     a, b = exp.bootstrap(50, seed=9), shuffled.bootstrap(50, seed=9)
     np.testing.assert_allclose(a.beta, b.beta, rtol=1e-9, atol=1e-12)
@@ -58,6 +81,7 @@ def test_weights_depend_only_on_seed_cluster_and_draw(exp: ume.Experiment) -> No
 
 
 def test_identity_draw_reproduces_the_point_estimate(exp: ume.Experiment) -> None:
+    """Invariant 3: a draw with every weight 1 reproduces the point estimate's coefficients and compliers' mean."""
     cd = exp.compress()
     fit = cd.fit()
     sums = np.concatenate([cd.g[:, None], cd.first], axis=1)[:, None, :]  # every xi = 1
@@ -70,6 +94,9 @@ def test_identity_draw_reproduces_the_point_estimate(exp: ume.Experiment) -> Non
 
 @pytest.mark.parametrize("weights", ["bayesian", "poisson", "multinomial"])
 def test_exact_bootstrap_equals_refits_on_rows(exp: ume.Experiment, weights: str) -> None:
+    """Invariant 4: each exact draw equals the numpy reference refit on the rows with the same cluster weights,
+    recomputing the propensities.
+    """
     draws = exp.bootstrap(6, weights=weights, seed=5)
     data = model_data(exp.frame, exp.design)
     keys = cluster_keys(exp.frame["account"].to_numpy())
@@ -88,6 +115,7 @@ def test_exact_bootstrap_equals_refits_on_rows(exp: ume.Experiment, weights: str
 
 
 def dense(r: object) -> np.ndarray:
+    """The design matrix as a dense array."""
     from ume._data import CSR
 
     return r.toarray() if isinstance(r, CSR) else np.asarray(r)
@@ -97,6 +125,9 @@ def dense(r: object) -> np.ndarray:
 
 
 def test_moments_identity() -> None:
+    r"""Invariant 6: over many weight draws, the mean and covariance of each stratum's $\sum \xi_a v_a$ converge to
+    its compressed row $(\sum v_a, \sum v_a v_a^\top)$.
+    """
     df = simulate_accounts(400, seed=8)
     exp = ume.annotate(df, cluster="account", instrument="Z", treatment="T").metrics(ume.mean("y"))
     cd = exp.compress()
@@ -122,6 +153,9 @@ def test_moments_identity() -> None:
 
 @pytest.mark.parametrize("case", [c for c in CASES if c.metric == "mean"], ids=lambda c: c.id)
 def test_exact_posterior_sd_is_close_to_the_sandwich(case: Case) -> None:
+    """Invariant 7: the exact Bayesian bootstrap's SD of the LATE is within 15% of the sandwich SE in each of the 8
+    mean-metric designs.
+    """
     exp = case.experiment(n_accounts=3000)
     fit = exp.fit()
     sd = fit.effects(se=exp.bootstrap(400, seed=1)).std_err("hours")
@@ -130,6 +164,9 @@ def test_exact_posterior_sd_is_close_to_the_sandwich(case: Case) -> None:
 
 @pytest.mark.parametrize("case", [c for c in CASES if c.metric == "mean"], ids=lambda c: c.id)
 def test_gaussian_posterior_sd_is_close_to_the_sandwich(case: Case) -> None:
+    """Invariant 7 for the Gaussian engine, on strata of at least 200 clusters, where it is meant to hold (decision
+    0019).
+    """
     # The Gaussian engine needs large strata: every stratum here has 200+ clusters (decision 0019).
     exp = case.experiment(n_accounts=12_000)
     cd = exp.compress()
@@ -140,6 +177,7 @@ def test_gaussian_posterior_sd_is_close_to_the_sandwich(case: Case) -> None:
 
 
 def test_gaussian_posterior_warns_on_small_strata() -> None:
+    """With a stratum of fewer than 200 clusters, the Gaussian engine warns and points to the exact one."""
     exp = Case(False, False, True, "mean").experiment(n_accounts=3000)  # smallest stratum: 60 clusters
     with pytest.warns(UserWarning, match="fewer than 200 clusters"):
         exp.compress().posterior(50, seed=1)
@@ -149,6 +187,7 @@ def test_gaussian_posterior_warns_on_small_strata() -> None:
 
 
 def test_draws_answer_probability_questions(exp: ume.Experiment) -> None:
+    """Draws give one value per draw, probabilities of thresholds and segment effects, and print with their method."""
     post = exp.bootstrap(500, seed=3)
     rho = ume.Effect(exp.design.metrics[1], "relative")
     values = post.values(rho)
@@ -161,6 +200,7 @@ def test_draws_answer_probability_questions(exp: ume.Experiment) -> None:
 
 
 def test_degenerate_poisson_draws_are_dropped() -> None:
+    """Poisson draws that leave a cohort with weight in one arm only are dropped, counted and reported."""
     # A tiny cohort makes some Poisson draws leave one arm with no weight.
     df = simulate_accounts(300, propensity=(0.02, 0.5, 0.5, 0.5), seed=6)
     exp = ume.annotate(df, cluster="account", instrument="Z", treatment="T", cohort="day").metrics(ume.mean("y"))
@@ -171,6 +211,7 @@ def test_degenerate_poisson_draws_are_dropped() -> None:
 
 
 def test_unknown_weights_are_rejected(exp: ume.Experiment) -> None:
+    """An unknown weight scheme raises a ValueError."""
     with pytest.raises(ValueError, match="unknown weights"):
         exp.bootstrap(10, weights="jackknife")
     _ = pl  # polars is the frame type of the fixtures

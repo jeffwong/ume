@@ -76,8 +76,11 @@ impl Stream {
 
 #[cfg(test)]
 mod tests {
+    //! Philox4x64-10 matches the published Random123 known-answer vectors, and uniforms stay strictly inside (0, 1).
+
     use super::*;
 
+    /// philox4x64 with 10 rounds reproduces Random123's known-answer vectors.
     #[test]
     fn matches_the_random123_known_answer() {
         // Known-answer test of Random123 (kat_vectors), philox4x64 with 10 rounds.
@@ -103,6 +106,7 @@ mod tests {
         );
     }
 
+    /// The extreme 64-bit outputs map strictly inside (0, 1), and a block of uniforms equals the single draws.
     #[test]
     fn uniforms_are_in_the_open_unit_interval() {
         assert!(open_unit(0) > 0.0 && open_unit(u64::MAX) < 1.0);

@@ -351,6 +351,8 @@ impl Pass<MomentsFold> {
 
 #[cfg(test)]
 mod tests {
+    //! The one-pass compressor: its first moments are the blocks of each stratum's rows, batches and shards add up to one pass, and non-contiguous clusters are rejected.
+
     use super::*;
     use crate::blocks::Blocks;
     use crate::rows::Dense;
@@ -366,6 +368,7 @@ mod tests {
         (r, t, y, vec![7, 7, 8, 9, 9], vec![1, 1, 0, 1, 1])
     }
 
+    /// A stratum's first moments equal the blocks of its rows computed directly.
     #[test]
     fn first_moments_are_the_blocks_of_the_stratum() {
         let (r, t, y, keys, strata) = rows();
@@ -392,6 +395,7 @@ mod tests {
         }
     }
 
+    /// Batches that split a cluster, and shards merged afterwards, give the same compressed rows as one pass.
     #[test]
     fn batches_and_shards_add_up() {
         let (r, t, y, keys, strata) = rows();
@@ -421,6 +425,7 @@ mod tests {
         }
     }
 
+    /// A cluster whose rows reappear after it ended is rejected as not contiguous.
     #[test]
     fn a_cluster_must_be_contiguous() {
         let (r, t, y, mut keys, strata) = rows();

@@ -68,6 +68,15 @@ class UniversalFit:
     (from compressed data); both give the same fit. Printing it shows a 2SLS
     regression report.
 
+    Parameters
+    ----------
+    raw : mapping
+        The engine's output (``ume._core.fit_rows_dense`` and its siblings): the
+        blocks, both stages, the compliers.
+    source : ModelData or CompressedData
+        The data the fit came from. It supplies the design, the row and cluster
+        counts, and the data for the ITT and the linearized standard error.
+
     Attributes
     ----------
     beta : numpy.ndarray
@@ -324,7 +333,24 @@ def _pair(label: str, value: str, label2: str = "", value2: str = "") -> str:
 
 
 class EffectTable(Table):
-    """Effects with standard errors and 95% intervals, with the compliers' summary on top."""
+    """Effects with standard errors and 95% intervals, with the compliers' summary on top.
+
+    Made by :meth:`UniversalFit.effects`, :meth:`UniversalFit.itt`,
+    :meth:`Experiment.effects` and :func:`ume.effects`, rather than built directly.
+
+    Parameters
+    ----------
+    rows : list of list
+        One row per effect: metric, contrast, population, estimate, standard
+        error, interval low and high.
+    fit : UniversalFit
+        The fit the effects come from (it supplies the header: design, compliance
+        rate, compliers' mean).
+    estimand : str
+        ``"LATE"``, ``"ATE"`` or ``"ITT"``.
+    method : str
+        How the standard errors were computed, for display.
+    """
 
     def __init__(self, rows: list[list[Any]], fit: UniversalFit, estimand: str, method: str) -> None:
         f = fit.features
@@ -346,11 +372,35 @@ class EffectTable(Table):
         self.estimand = estimand
 
     def estimate(self, metric: str, contrast: str = "difference") -> float:
-        """The estimate of one effect."""
+        """The estimate of one effect.
+
+        Parameters
+        ----------
+        metric : str
+            The metric's name.
+        contrast : str
+            ``"difference"``, ``"relative"``, or ``"custom"`` for a custom effect.
+
+        Returns
+        -------
+        float
+        """
         return float(self._find(metric, contrast)[3])
 
     def std_err(self, metric: str, contrast: str = "difference") -> float:
-        """The standard error of one effect."""
+        """The standard error of one effect.
+
+        Parameters
+        ----------
+        metric : str
+            The metric's name.
+        contrast : str
+            ``"difference"``, ``"relative"``, or ``"custom"`` for a custom effect.
+
+        Returns
+        -------
+        float
+        """
         return float(self._find(metric, contrast)[4])
 
     def _find(self, metric: str, contrast: str) -> list[Any]:

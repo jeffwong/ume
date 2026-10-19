@@ -86,7 +86,17 @@ class Design:
         return replace(self, metrics=tuple(metrics))
 
     def bind(self, frame: object) -> Experiment:
-        """Attach this design to a pandas or polars frame of rows."""
+        """Attach this design to a frame of rows.
+
+        Parameters
+        ----------
+        frame : pandas.DataFrame, polars.DataFrame or polars.LazyFrame
+            The rows; every column the design names must be present.
+
+        Returns
+        -------
+        Experiment
+        """
         from ume._experiment import Experiment
 
         return Experiment(frame, self)
@@ -96,7 +106,10 @@ class Design:
 class DesignFeatures:
     """Which special case of the universal model an experiment is.
 
-    Attributes
+    Made by :meth:`Experiment.features`, :meth:`CompressedData.features` and
+    every fit, from the data, rather than built directly.
+
+    Parameters
     ----------
     encouraged : bool
         $T \\ne Z$ in some row: an encouragement design, estimand LATE.

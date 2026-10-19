@@ -31,6 +31,24 @@ from ume._table import Table
 class Draws:
     """$B$ draws of the universal model.
 
+    Made by :meth:`ume.Experiment.bootstrap`, :func:`ume.bootstrap`,
+    :meth:`ume.CompressedData.posterior` and :meth:`ume.DrawSums.draws`, rather
+    than built directly.
+
+    Parameters
+    ----------
+    raw : mapping
+        The engine's output (``ume._core.fit_draws``): ``beta``, ``x_c``,
+        ``pi_c``, ``e_hat`` and ``ok`` (False for degenerate draws, which are dropped).
+    design : Design
+        The resolved design, which labels the coefficients and reads the effects.
+    engine : str
+        ``"exact"`` or ``"gaussian"``, for display.
+    weights : str
+        The weight scheme, for display.
+    seed : int
+        The seed that produced the draws.
+
     Attributes
     ----------
     beta : numpy.ndarray
@@ -82,6 +100,17 @@ class Draws:
         """The draws of one effect, shape ``(B,)``.
 
         Each draw is read at its own compliers' mean (or at the segment `at`).
+
+        Parameters
+        ----------
+        effect : Effect or CustomEffect
+            The effect.
+        at : mapping, optional
+            A segment (covariate values) for an effect that does not set its own.
+
+        Returns
+        -------
+        numpy.ndarray
         """
         where = effect.at if effect.at is not None else at
         x0 = point(self.design.covariates, self._x_c, where)
@@ -92,6 +121,20 @@ class Draws:
 
         For posterior draws this is a posterior probability, such as
         $P(\\rho_R < -10\\%)$.
+
+        Parameters
+        ----------
+        effect : Effect or CustomEffect
+            The effect.
+        below : float, optional
+            Count draws whose effect is below this value.
+        above : float, optional
+            Count draws whose effect is above this value. With both, the draws
+            strictly between the two.
+
+        Returns
+        -------
+        float
         """
         v = self.values(effect)
         mask = np.ones(v.size, dtype=bool)
@@ -102,7 +145,19 @@ class Draws:
         return float(mask.mean())
 
     def apply(self, fn: Callable[[NDArray[np.float64]], NDArray[np.float64]], effect: AnyEffect) -> NDArray[np.float64]:
-        """Draws of any function of an effect: ``fn`` applied to each draw."""
+        """Draws of any function of an effect: ``fn`` applied to each draw.
+
+        Parameters
+        ----------
+        fn : callable
+            A vectorized function of an array of effect draws, such as ``np.exp``.
+        effect : Effect or CustomEffect
+            The effect.
+
+        Returns
+        -------
+        numpy.ndarray
+        """
         return np.asarray(fn(self.values(effect)))
 
     def effects(self, *effects: AnyEffect, at: Mapping[str, Any] | None = None) -> Table:

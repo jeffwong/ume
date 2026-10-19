@@ -15,8 +15,17 @@ metrics as special cases. The analysis is a short grammar:
 The public API is Python; the numeric engine is Rust (``ume._core``).
 """
 
-from ume._compress import CompressedData, CompressedRow, Compressor, Stratum, bootstrap, bootstrap_sums, compress, load
-from ume._compress import early_effects as _early_effects
+from ume._compress import (
+    CompressedData,
+    CompressedRow,
+    Compressor,
+    Stratum,
+    bootstrap,
+    bootstrap_sums,
+    compress,
+    effects,
+    load,
+)
 from ume._config import get_threads, set_threads
 from ume._core import __version__
 from ume._design import Design, DesignFeatures
@@ -28,17 +37,6 @@ from ume._fit import EffectTable, UniversalFit
 from ume._metrics import Mean, Ratio, mean, ratio
 from ume._roles import Categorical, Covariates, Numeric, categorical, covariates
 from ume._table import Table
-
-
-def effects(rows, design, *effects, at=None, se="sandwich", sparse="auto", **source_options):  # type: ignore[no-untyped-def]
-    """Effects and standard errors of rows in two passes, without second moments.
-
-    The streaming form of :meth:`Experiment.effects`. `rows` is a frame, a lazy
-    frame, or a function that returns an iterable of batches grouped by cluster
-    (it is read twice). See :meth:`Experiment.effects` for the other arguments.
-    """
-    return _early_effects(rows, design, effects, at, se, sparse, **source_options)
-
 
 __all__ = [
     "Categorical",

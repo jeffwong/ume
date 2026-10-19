@@ -36,6 +36,8 @@ Each release lists its changes under these headings, in this order, leaving out 
 - `make bench-save` / `make bench-compare`: local benchmark baselines (criterion and pytest-benchmark).
 - `ume.testing.simulate_accounts(heavy_tail=...)`: heavy-tailed clusters, and calibration scenarios `running`, `small-strata` and `heavy-tails`.
 
+- Every public input is documented (name, type, purpose); `scripts/check_docstrings.py` enforces it in `make lint`. Every test file and test states its purpose and oracle.
+
 ### Performance
 
 - At 1M clusters (2.19M rows) and $B = 1000$: the exact bootstrap takes 3.8 s on 4 threads (12.2 s on 1), compression plus the Gaussian posterior 0.40 s.

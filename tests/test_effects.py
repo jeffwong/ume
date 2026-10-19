@@ -1,4 +1,17 @@
-"""The effect grammar reproduces the posts' effects, and its gradients are exact."""
+r"""The effect grammar computes the posts' effects, with exact gradients.
+
+Every effect is contrast ∘ statistic ∘ population, read on the fitted treatment
+lines at the compliers' mean or at a segment. These tests check that:
+
+- the grammar reproduces the CSS post's closed forms ($\tau_{LATE}$, $\tau_R$, $\rho_R$),
+  and a mean metric is the special case of a ratio with denominator 1;
+- complex-step gradients, which give the delta-method standard errors, agree
+  with finite differences, and custom effects equal the built-in ones;
+- segments read the lines at the right point;
+- the first-stage F matches linearmodels, and the ITT equals the difference in
+  weighted arm means;
+- (slow) the estimates land near the truth of the simulation.
+"""
 
 from __future__ import annotations
 
@@ -27,6 +40,10 @@ def lines(fit: ume.UniversalFit) -> dict[str, float]:
 
 
 def test_grammar_reproduces_the_posts_effects(fit: ume.UniversalFit) -> None:
+    r"""Each built-in effect equals its closed form in the treatment lines $\ell$: $\tau_{LATE} = \ell_y$, then
+    $\tau_R$ and $\rho_R$ from $\ell_{TN}, \ell_{TD}, \ell_N, \ell_D$ (CSS post), and the mean's relative
+    effect.
+    """
     eff, ell = fit.effects(), lines(fit)
     assert eff.estimate("hours") == pytest.approx(ell["y"], rel=1e-12)
     tau_r = ell["T·N"] / ell["T·D"] - (ell["T·N"] - ell["N"]) / (ell["T·D"] - ell["D"])
@@ -37,6 +54,7 @@ def test_grammar_reproduces_the_posts_effects(fit: ume.UniversalFit) -> None:
 
 
 def test_a_mean_is_a_ratio_with_denominator_one(fit: ume.UniversalFit) -> None:
+    r"""$\mu_t$ of the constant is 1, so the mean statistic $N / 1$ reduces to the treatment line of $N$."""
     # The line of the outcome T is exactly 1, so mu_1(T)/... reduces: check the closed form directly.
     levels = Levels(fit.beta, fit.x_C - fit.x_ref, fit.design.layout)
     assert levels.mu1(None) == 1.0 and levels.mu0(None) == 1.0
@@ -45,6 +63,9 @@ def test_a_mean_is_a_ratio_with_denominator_one(fit: ume.UniversalFit) -> None:
 
 
 def test_complex_step_gradient_matches_finite_differences(fit: ume.UniversalFit) -> None:
+    r"""The complex-step gradient of a nonlinear effect ($\rho_R$) with respect to $\text{vec}(\hat\beta)$ agrees
+    with central finite differences.
+    """
     effect = ume.Effect(fit.design.metrics[1], "relative")
     x0 = fit.x_C - fit.x_ref
     _, grad = value_and_gradient(effect, fit.beta, x0, fit.design.layout)
@@ -58,6 +79,9 @@ def test_complex_step_gradient_matches_finite_differences(fit: ume.UniversalFit)
 
 
 def test_custom_effect_equals_builtin(fit: ume.UniversalFit) -> None:
+    r"""A custom effect written from $\mu_1$ and $\mu_0$ gives the same estimate and standard error as the built-in
+    ratio effect.
+    """
     custom = ume.effect("rpp", lambda m: m.mu1("N") / m.mu1("D") - m.mu0("N") / m.mu0("D"))
     out = fit.effects(custom)
     assert out.estimate("rpp", "custom") == pytest.approx(fit.effects().estimate("rpp"), rel=1e-12)
@@ -65,6 +89,9 @@ def test_custom_effect_equals_builtin(fit: ume.UniversalFit) -> None:
 
 
 def test_segment_reads_the_line_at_x0(fit: ume.UniversalFit) -> None:
+    """An effect at a segment (numeric and categorical values) is the treatment line read at that point, with the
+    other covariates at the compliers' mean; unknown covariates are rejected.
+    """
     eff = fit.effects(ume.Effect(ume.mean("y", name="hours")), at={"x1": 1.0, "kids": 1, "device": "mobile"})
     labels = fit.x_labels
     x0 = fit.x_C - fit.x_ref
@@ -78,6 +105,9 @@ def test_segment_reads_the_line_at_x0(fit: ume.UniversalFit) -> None:
 
 
 def test_first_stage_f_matches_linearmodels() -> None:
+    """The robust first-stage F of each endogenous regressor, times its $d$ degrees of freedom, equals
+    linearmodels' first-stage Wald statistic.
+    """
     exp = Case(True, True, True, "mean").experiment()
     fit = exp.fit()
     data = model_data(exp.frame, exp.design)
@@ -101,6 +131,7 @@ def test_first_stage_f_matches_linearmodels() -> None:
 
 
 def test_itt_without_covariates_is_the_difference_in_weighted_means() -> None:
+    """The ITT model ($T := Z$) without covariates gives the difference in inverse-propensity-weighted arm means."""
     exp = Case(True, True, True, "mean").experiment()
     exp = ume.annotate(exp.frame, cluster="account", instrument="Z", treatment="T", cohort="day")
     exp = exp.metrics(ume.mean("y", name="hours"))
@@ -113,6 +144,9 @@ def test_itt_without_covariates_is_the_difference_in_weighted_means() -> None:
 
 @pytest.mark.slow
 def test_estimates_are_near_the_truth() -> None:
+    r"""(Slow.) In the running example, the LATE and $\tau_R$ are within 4 standard errors of the truth from
+    simulating both counterfactual worlds.
+    """
     from ume.testing import simulate_accounts, truth
 
     true = truth(seed=1, n_accounts=400_000)

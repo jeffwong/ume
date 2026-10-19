@@ -192,6 +192,8 @@ impl Compliers {
 
 #[cfg(test)]
 mod tests {
+    //! The sufficient statistic and what it determines: blocks add, the compliers follow the Wald ratio, and the first stage is the second stage with T replaced by Z.
+
     use super::*;
     use crate::rows::Dense;
 
@@ -208,6 +210,7 @@ mod tests {
         )
     }
 
+    /// The blocks of the two arms add up to the blocks of all rows: the monoid property behind compression.
     #[test]
     fn blocks_are_additive() {
         let (all, z) = example();
@@ -222,6 +225,7 @@ mod tests {
         }
     }
 
+    /// Take-up, compliance rate and the compliers' mean follow the Wald ratio on a hand-computed example.
     #[test]
     fn compliers_follow_the_wald_ratio() {
         let (all, z) = example();
@@ -234,6 +238,7 @@ mod tests {
         assert!((c.x_mean[0] - 2.5).abs() < 1e-12);
     }
 
+    /// The first stage's normal equations equal the second stage's with the treatment replaced by the instrument.
     #[test]
     fn first_stage_is_the_second_stage_with_t_equal_to_z() {
         let (all, z) = example();

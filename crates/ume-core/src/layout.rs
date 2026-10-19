@@ -102,8 +102,11 @@ impl Layout {
 
 #[cfg(test)]
 mod tests {
+    //! The distinct layout of a cluster summary is a bijection: every entry has one position, and symmetric entries share it.
+
     use super::*;
 
+    /// The positions of the distinct layout enumerate its q entries in order, and S(j, m) = S(m, j).
     #[test]
     fn positions_enumerate_every_entry_once() {
         let layout = Layout::new(3, 2);

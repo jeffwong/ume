@@ -142,6 +142,8 @@ impl Weights {
 
 #[cfg(test)]
 mod tests {
+    //! Bootstrap weights have the moments of their distributions, multinomial counts sum to G, and a weight depends only on (seed, cluster, draw).
+
     use super::*;
 
     fn moments(scheme: Scheme, n: usize) -> (f64, f64, f64) {
@@ -158,6 +160,7 @@ mod tests {
         (mean, var, third)
     }
 
+    /// Exp(1) weights: mean 1, variance 1, third central moment 2.
     #[test]
     fn bayesian_weights_have_the_moments_of_exp_1() {
         let (m, v, t) = moments(Scheme::Bayesian, 200_000);
@@ -167,6 +170,7 @@ mod tests {
         );
     }
 
+    /// Poisson(1) weights: mean 1, variance 1, third central moment 1.
     #[test]
     fn poisson_weights_have_the_moments_of_poisson_1() {
         let (m, v, t) = moments(Scheme::Poisson, 200_000);
@@ -176,6 +180,7 @@ mod tests {
         );
     }
 
+    /// In every draw, the multinomial counts over G clusters sum to G.
     #[test]
     fn multinomial_counts_sum_to_the_number_of_clusters() {
         let g = 1000;
@@ -191,6 +196,7 @@ mod tests {
         assert!(totals.iter().all(|&t| t == g as f64));
     }
 
+    /// A cluster's weights are the same whatever clusters came before it.
     #[test]
     fn weights_depend_only_on_seed_cluster_and_draw() {
         let (mut a, mut b) = (

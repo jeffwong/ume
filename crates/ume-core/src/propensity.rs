@@ -48,8 +48,11 @@ pub fn inverse_propensity(z: &[f64], cohort: &[u32], xi: &[f64], n_cohorts: usiz
 
 #[cfg(test)]
 mod tests {
+    //! Cohort propensities are shares of clusters, and a cohort with one arm only is an error, not a silent infinity.
+
     use super::*;
 
+    /// Each cohort's propensity is its share of clusters with Z = 1, and the weights are 1/e and 1/(1 - e).
     #[test]
     fn propensity_is_the_share_of_clusters() {
         // Cohort 0 has Z = (1, 0, 0), cohort 1 has Z = (0, 1, 1).
@@ -62,6 +65,7 @@ mod tests {
         assert!((p.w[2] - 1.5).abs() < 1e-12);
     }
 
+    /// A cohort whose clusters are all in one arm is reported as degenerate.
     #[test]
     fn a_cohort_without_controls_is_an_error() {
         let p = inverse_propensity(&[1.0, 1.0], &[0, 0], &[1.0, 1.0], 1);
