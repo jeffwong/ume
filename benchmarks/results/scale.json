@@ -1,0 +1,121 @@
+{
+  "meta": {
+    "accounts": 1000000,
+    "draws": 1000,
+    "rows": 2190070
+  },
+  "results": [
+    {
+      "step": "baseline",
+      "threads": 1,
+      "seconds": 1.2479722499847412e-07,
+      "peak_rss_bytes": 619905024,
+      "rows": 2190070,
+      "description": "simulate and annotate the rows (not timed)"
+    },
+    {
+      "step": "fit_rows",
+      "threads": 1,
+      "seconds": 1.3434256659820676,
+      "peak_rss_bytes": 1815789568,
+      "rows": 2190070,
+      "description": "fit the universal model on the rows"
+    },
+    {
+      "step": "compress",
+      "threads": 1,
+      "seconds": 0.7249826258048415,
+      "peak_rss_bytes": 887275520,
+      "rows": 2190070,
+      "description": "one compression pass"
+    },
+    {
+      "step": "fit_compressed",
+      "threads": 1,
+      "seconds": 0.0012092497199773788,
+      "peak_rss_bytes": 881197056,
+      "rows": 2190070,
+      "description": "fit from the compressed data (memory includes the compression before it)"
+    },
+    {
+      "step": "gaussian_posterior",
+      "threads": 1,
+      "seconds": 0.7338498327881098,
+      "peak_rss_bytes": 899891200,
+      "rows": 2190070,
+      "description": "compress, then B Gaussian posterior draws"
+    },
+    {
+      "step": "exact_bootstrap",
+      "threads": 1,
+      "seconds": 11.198685209266841,
+      "peak_rss_bytes": 867500032,
+      "rows": 2190070,
+      "description": "exact Bayesian bootstrap, B draws, one pass"
+    },
+    {
+      "step": "two_pass_effects",
+      "threads": 1,
+      "seconds": 0.5819551674649119,
+      "peak_rss_bytes": 897548288,
+      "rows": 2190070,
+      "description": "influence standard errors in two passes"
+    },
+    {
+      "step": "baseline",
+      "threads": 4,
+      "seconds": 4.0978193283081055e-08,
+      "peak_rss_bytes": 628228096,
+      "rows": 2190070,
+      "description": "simulate and annotate the rows (not timed)"
+    },
+    {
+      "step": "fit_rows",
+      "threads": 4,
+      "seconds": 1.2809265423566103,
+      "peak_rss_bytes": 1836957696,
+      "rows": 2190070,
+      "description": "fit the universal model on the rows"
+    },
+    {
+      "step": "compress",
+      "threads": 4,
+      "seconds": 0.35825804248452187,
+      "peak_rss_bytes": 897286144,
+      "rows": 2190070,
+      "description": "one compression pass"
+    },
+    {
+      "step": "fit_compressed",
+      "threads": 4,
+      "seconds": 0.0013779578730463982,
+      "peak_rss_bytes": 883654656,
+      "rows": 2190070,
+      "description": "fit from the compressed data (memory includes the compression before it)"
+    },
+    {
+      "step": "gaussian_posterior",
+      "threads": 4,
+      "seconds": 0.37420500069856644,
+      "peak_rss_bytes": 920076288,
+      "rows": 2190070,
+      "description": "compress, then B Gaussian posterior draws"
+    },
+    {
+      "step": "exact_bootstrap",
+      "threads": 4,
+      "seconds": 3.327131667174399,
+      "peak_rss_bytes": 915259392,
+      "rows": 2190070,
+      "description": "exact Bayesian bootstrap, B draws, one pass"
+    },
+    {
+      "step": "two_pass_effects",
+      "threads": 4,
+      "seconds": 0.3781011663377285,
+      "peak_rss_bytes": 908558336,
+      "rows": 2190070,
+      "description": "influence standard errors in two passes"
+    }
+  ]
+}

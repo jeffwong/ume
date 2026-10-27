@@ -1,0 +1,24 @@
+---
+title: "0023 The second analytic standard error is called \"influence\""
+date: 2026-10-26
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+The options of `se=` are `"sandwich"` and `"influence"`, plus a `Draws` object. The option introduced in [0020](0020-linearized-se-and-two-passes.qmd) as `"linearized"` is renamed `"influence"`. So are its module (`ume._influence`), its functions, its display label, the calibration and benchmark labels, and the docs. There is no alias, because nothing had been released.
+
+## Justification
+
+Decided by Jeffrey Wong. "Linearized" did not distinguish the two methods: both are first-order linearizations, and both are cluster-robust.
+
+- The sandwich linearizes the effect through $\hat\beta$ only, holding the propensities and the compliers' mean fixed.
+- The other linearizes through everything that is estimated: the whole map from the per-stratum sums to the effect.
+
+The second is the influence-function standard error of the whole estimator, $\text{Var} \approx \sum_a \psi_a^2$ with $\psi_a$ each cluster's influence, so "influence" names what it is. "Linearized" also suggested to some readers that only this method approximates, or that it is a variant of the bootstrap, which it is not: it draws nothing.
+
+## Alternatives
+
+- `"linearized_bootstrap"`: rejected, because it involves no draws, no seed and no simulation noise.
+- `"full"` or `"full_linearization"`: accurate, but "full" is vague without context.

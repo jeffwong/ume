@@ -23,6 +23,8 @@ website:
         text: Reference
       - text: Rust
         href: rust/ume_core/index.html
+      - href: benchmarks.qmd
+        text: Benchmarks
       - href: design/index.qmd
         text: Design
       - href: changelog.qmd

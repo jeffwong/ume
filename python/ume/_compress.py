@@ -34,7 +34,7 @@ from ume._draws import Draws
 from ume._drawsums import DrawSums
 from ume._effects import AnyEffect, default_effects, point, value_and_gradient
 from ume._fit import Z_975, EffectTable, UniversalFit
-from ume._linearize import stratum_gradients
+from ume._influence import stratum_gradients
 from ume._source import Source, open_source
 from ume._table import Table
 
@@ -127,7 +127,7 @@ class CompressedRow:
 
     def __repr__(self) -> str:
         q = self.first_moments.size
-        return f"<CompressedRow {self.stratum}: G = {self.G:,}, q = {q}, second moments {q} × {q}>"
+        return f"<CompressedRow {self.stratum}: {self.G:,} clusters, q = {q}, second moments {q} × {q}>"
 
 
 class CompressedData(Mapping[Stratum, CompressedRow]):
@@ -407,27 +407,41 @@ class CompressedData(Mapping[Stratum, CompressedRow]):
     # ---- printing ---------------------------------------------------------------------------------
 
     def table(self) -> Table:
-        """One line per stratum: instrument, cohort, clusters, and the cohort's propensity."""
+        """One line per stratum: instrument, cohort, clusters ($G_h$), rows, and the cohort's propensity ($\\hat e_c$).
+
+        Returns
+        -------
+        Table
+        """
         e = self.e_hat()
-        rows = [[h.Z, h.cohort if h.cohort is not None else "", int(g), e.get(h.cohort, float("nan"))]
-                for h, g in zip(self.strata, self.g, strict=True)]  # fmt: skip
+        rows_col = self.d * self.o  # S_00, the stratum's row count, in the distinct layout
+        rows = [
+            [h.Z, h.cohort if h.cohort is not None else "", int(g), round(first[rows_col]),
+             e.get(h.cohort, float("nan"))]
+            for h, g, first in zip(self.strata, self.g, self.first, strict=True)
+        ]  # fmt: skip
         cohort = self.design.cohort or "cohort"
-        return Table(["Z", cohort, "G_h", "e_hat"], rows)
+        return Table(["Z", cohort, "clusters", "rows", "propensity"], rows)
+
+    def _summary(self) -> list[tuple[str, str]]:
+        f = self.features()
+        numbers = 1 + self.q + self.q * (self.q + 1) // 2
+        return [
+            ("strata", f"{len(self)}, from {self.n:,} rows in {self.n_clusters:,} clusters"),
+            ("layout", f"distinct, q = {self.q} (d = {self.d}, o = {self.o}); {numbers:,} numbers per stratum"),
+            ("design", f.describe()),
+        ]
 
     def __repr__(self) -> str:
-        f = self.features()
-        header = (
-            f"<ume.CompressedData: {len(self)} strata from {self.n:,} rows in {self.n_clusters:,} clusters>\n"
-            f"  layout   distinct, q = {self.q} (d = {self.d}, o = {self.o}); "
-            f"{self.q * (self.q + 3) // 2 + 1:,} numbers per stratum\n"
-            f"  design   {f.describe()}"
-        )
-        return header + "\n" + repr(self.table())
+        lines = [f"<ume.CompressedData: {len(self)} strata from {self.n:,} rows in {self.n_clusters:,} clusters>"]
+        lines += [f"  {label:<8} {text}" for label, text in self._summary()[1:]]
+        return "\n".join(lines) + "\n" + repr(self.table())
 
     def _repr_html_(self) -> str:
         import html
 
-        return f"<pre>{html.escape(repr(self))}</pre>"
+        items = "".join(f"<li><strong>{label}</strong>: {html.escape(text)}</li>" for label, text in self._summary())
+        return f"<p><strong>ume.CompressedData</strong></p><ul>{items}</ul>{self.table()._repr_html_()}"
 
 
 FORMAT = "ume.compressed"
@@ -642,8 +656,8 @@ def early_effects(
     **source_options: Any,
 ) -> EffectTable:
     """Effects with standard errors in two passes and no second moments (delta vectors early)."""
-    if se not in ("sandwich", "linearized"):
-        raise ValueError("se must be 'sandwich' or 'linearized'")
+    if se not in ("sandwich", "influence"):
+        raise ValueError("se must be 'sandwich' or 'influence'")
     source = open_source(rows, design, **source_options)
     if not source.reiterable:
         raise ValueError("two passes need a source that can be read twice: a frame, a lazy frame, or a function")
@@ -686,7 +700,7 @@ def early_effects(
         where = e.at if e.at is not None else at
         label = "compliers" if not where else ", ".join(f"{k}={v}" for k, v in where.items())
         rows.append([e.name, e.contrast, label, value, float(s), value - Z_975 * s, value + Z_975 * s])
-    method = ("sandwich (" + features.covariance + ")" if se == "sandwich" else "linearized") + ", two passes"
+    method = ("sandwich (" + features.covariance + ")" if se == "sandwich" else "influence") + ", two passes"
     return EffectTable(rows, summary, features.estimand, method)  # type: ignore[arg-type]
 
 
@@ -714,7 +728,7 @@ def effects(
         Defaults to the difference and the relative effect of every metric.
     at : mapping, optional
         A segment to read the effects at.
-    se : {"sandwich", "linearized"}
+    se : {"sandwich", "influence"}
         The standard error.
     sparse : bool or "auto"
         Dense or sparse design matrix in each batch.

@@ -75,7 +75,7 @@ class UniversalFit:
         blocks, both stages, the compliers.
     source : ModelData or CompressedData
         The data the fit came from. It supplies the design, the row and cluster
-        counts, and the data for the ITT and the linearized standard error.
+        counts, and the data for the ITT and the influence standard error.
 
     Attributes
     ----------
@@ -146,7 +146,7 @@ class UniversalFit:
         rows: list[list[Any]] = [
             ["take-up, Z = 1", float(c["take_up_z1"]), None],
             ["take-up, Z = 0 (always-takers)", float(c["take_up_z0"]), None],
-            ["compliance rate π_C", self.pi_C, None],
+            ["compliance rate", self.pi_C, None],
             ["never-takers (1 − take-up, Z = 1)", 1 - float(c["take_up_z1"]), None],
         ]
         rows += [
@@ -202,10 +202,10 @@ class UniversalFit:
             The effects. By default, the difference and the relative effect of every metric.
         at : mapping, optional
             Read every effect at a segment instead of at the compliers' mean.
-        se : "sandwich", "linearized" or Draws
+        se : "sandwich", "influence" or Draws
             ``"sandwich"``: the delta method on the cluster-robust covariance,
             holding $\\hat e$ and $\\bar x_C$ fixed (decision 0012).
-            ``"linearized"``: the first-order expansion of the bootstrap in the
+            ``"influence"``: the first-order expansion of the bootstrap in the
             per-stratum sums, which also moves $\\hat e$ and $\\bar x_C$
             (decision 0020); it needs the compressed rows, and compresses the
             rows on demand. A :class:`~ume.Draws` object: the standard deviation
@@ -215,14 +215,14 @@ class UniversalFit:
         -------
         EffectTable
         """
-        if isinstance(se, str) and se not in ("sandwich", "linearized"):
-            raise ValueError("se must be 'sandwich', 'linearized' or a Draws object")
+        if isinstance(se, str) and se not in ("sandwich", "influence"):
+            raise ValueError("se must be 'sandwich', 'influence' or a Draws object")
         draws = None if isinstance(se, str) else se
-        rows = self._effect_rows(effects, at, "compliers", draws, linearized=se == "linearized")
+        rows = self._effect_rows(effects, at, "compliers", draws, influence=se == "influence")
         if draws is not None:
             method = draws.label
-        elif se == "linearized":
-            method = "linearized (moves e_hat and x_C)"
+        elif se == "influence":
+            method = "influence (moves the propensities and the compliers' mean)"
         else:
             method = "sandwich (" + self.features.covariance + ")"
         return EffectTable(rows, self, self.features.estimand, method)
@@ -233,11 +233,11 @@ class UniversalFit:
         at: Mapping[str, Any] | None,
         population: str,
         draws: Draws | None = None,
-        linearized: bool = False,
+        influence: bool = False,
     ) -> list[list[Any]]:
         chosen: Sequence[AnyEffect] = effects or default_effects(self.design.metrics)
         base = np.asarray(self._compliers["x_c"])
-        lin_sd = self._linearized_sd(chosen, at) if linearized else None
+        lin_sd = self._influence_sd(chosen, at) if influence else None
         rows = []
         for i, e in enumerate(chosen):
             where = e.at if e.at is not None else at
@@ -253,15 +253,15 @@ class UniversalFit:
             rows.append([e.name, e.contrast, label, value, std, value - Z_975 * std, value + Z_975 * std])
         return rows
 
-    def _linearized_sd(self, effects: Sequence[AnyEffect], at: Mapping[str, Any] | None) -> NDArray[np.float64]:
-        """The linearized standard error of each effect, from the compressed rows."""
-        from ume._linearize import linearized_variance, stratum_gradients
+    def _influence_sd(self, effects: Sequence[AnyEffect], at: Mapping[str, Any] | None) -> NDArray[np.float64]:
+        """The influence standard error of each effect, from the compressed rows."""
+        from ume._influence import influence_variance, stratum_gradients
 
         cd = self.source.compressed()
         sums = np.concatenate([cd.g[:, None], cd.first], axis=1)
         z, cohort, n_cohorts = cd._cohorts()
         grads = stratum_gradients(effects, cd.design, sums, z, cohort, n_cohorts, self.features.encouraged, at)
-        return np.sqrt(linearized_variance(grads, cd.g, cd.first, cd.second))
+        return np.sqrt(influence_variance(grads, cd.g, cd.first, cd.second))
 
     def itt(self, *effects: AnyEffect) -> EffectTable:
         """Intent to treat effects: the effect of the assignment $Z$ itself.
@@ -361,9 +361,9 @@ class EffectTable(Table):
             x_c = ", ".join(
                 f"{label} = {format_value(float(v))}" for label, v in zip(fit.x_labels, fit.x_C, strict=True)
             )
-            lines.append(f"  compliance rate π_C = {fit.pi_C:.4f}")
+            lines.append(f"  compliance rate = {fit.pi_C:.4f}")
             if x_c:
-                lines.append(f"  compliers' mean x̄_C: {x_c}")
+                lines.append(f"  compliers' mean: {x_c}")
         super().__init__(
             ["metric", "contrast", "population", "estimate", "std err", "[0.025", "0.975]"],
             rows,

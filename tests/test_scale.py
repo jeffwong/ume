@@ -103,8 +103,8 @@ def test_a_lazy_frame_streams_to_the_same_results(df: pl.DataFrame, design: ume.
         lazy.bootstrap(20, seed=4).beta, eager.bootstrap(20, seed=4).beta, rtol=1e-10, atol=1e-12
     )
     np.testing.assert_allclose(
-        [r[4] for r in lazy.effects(se="linearized", batch_size=1500).rows],
-        [r[4] for r in eager.effects(se="linearized").rows],
+        [r[4] for r in lazy.effects(se="influence", batch_size=1500).rows],
+        [r[4] for r in eager.effects(se="influence").rows],
         rtol=1e-8,
     )
     assert_same(lazy.fit(), eager.fit())  # fit on rows collects the lazy frame
@@ -151,9 +151,9 @@ def test_a_stream_of_batches(df: pl.DataFrame, design: ume.Design) -> None:
     assert_same(ume.compress(batches(df), design).fit(), design.bind(df).compress().fit())
     draws = ume.bootstrap(batches(df), design, B=10, seed=1)
     np.testing.assert_allclose(draws.beta, design.bind(df).bootstrap(10, seed=1).beta, rtol=1e-10, atol=1e-12)
-    two = ume.effects(lambda: batches(df), design, se="linearized")  # a function: read twice
+    two = ume.effects(lambda: batches(df), design, se="influence")  # a function: read twice
     np.testing.assert_allclose(
-        [r[4] for r in two.rows], [r[4] for r in design.bind(df).effects(se="linearized").rows], rtol=1e-8
+        [r[4] for r in two.rows], [r[4] for r in design.bind(df).effects(se="influence").rows], rtol=1e-8
     )
 
 

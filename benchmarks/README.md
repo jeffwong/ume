@@ -10,6 +10,10 @@ Performance and memory are features of this library. Benchmark before and after 
 
 Always benchmark a **release** build. `make bench-python` and `make bench-memory` rebuild the extension with `--release` first.
 
+## The Benchmarks page
+
+`make bench-results` runs all three suites plus `scale.py` (every step at 1M accounts, 1 and 4 threads, with peak memory per step) and collects them with `report.py` into `results/benchmarks.json`. The docs' Benchmarks page renders that file; `make bench-page` refreshes it and re-renders the page. Commit `results/benchmarks.json` to publish the numbers with the docs.
+
 ## Tracking changes
 
 Before an optimization, save a baseline; after it, compare:

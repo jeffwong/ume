@@ -25,9 +25,9 @@ Each release lists its changes under these headings, in this order, leaving out 
 
 - Bootstraps and posteriors: `exp.bootstrap(B, weights="bayesian" | "poisson" | "multinomial", seed)` (exact, one pass over the rows), and `cd.posterior(B, seed)` (Gaussian, from the compressed rows alone; warns below 200 clusters per stratum). Both return `ume.Draws` (`.effects()`, `.values()`, `.prob()`), and `fit.effects(se=draws)` uses draw standard deviations. Weights come from Philox4x64-10 streams keyed by (seed, cluster, draw), bit-for-bit equal to numpy's Philox.
 
-- The linearized standard error, `fit.effects(se="linearized")`: the bootstrap's first-order expansion in the per-stratum sums, which includes the uncertainty in $\hat e$ and $\bar x_C$. Its gradient is taken through the engine's own per-draw fit.
-- Delta vectors early, `exp.effects(se="sandwich" | "linearized")`: the same estimates and standard errors in two passes over the rows, keeping $H(1+q)$ numbers instead of $H(1+q)^2$.
-- `benchmarks/calibration.py`: a calibration Monte Carlo of every method against the simulated truth. Over 1,000 replications, the sandwich, linearized, exact Bayesian and Gaussian intervals all cover 94.3%–95.1% with SE/SD 0.999–1.015.
+- The influence standard error, `fit.effects(se="influence")`: the bootstrap's first-order expansion in the per-stratum sums, which includes the uncertainty in $\hat e$ and $\bar x_C$. Its gradient is taken through the engine's own per-draw fit.
+- Delta vectors early, `exp.effects(se="sandwich" | "influence")`: the same estimates and standard errors in two passes over the rows, keeping $H(1+q)$ numbers instead of $H(1+q)^2$.
+- `benchmarks/calibration.py`: a calibration Monte Carlo of every method against the simulated truth. Over 1,000 replications, the sandwich, influence, exact Bayesian and Gaussian intervals all cover 94.3%–95.1% with SE/SD 0.999–1.015.
 
 - Scale: `ume.annotate` accepts polars LazyFrames (resolved with one aggregation, sorted lazily, streamed in batches); `ume.design`, `ume.compress`, `ume.bootstrap` and `ume.effects` stream any iterable of batches; `cd.save()` and `ume.load()` store compressed data (format `ume.compressed` v1); every pass and draw fit runs on `ume.get_threads()` workers (`min(4, cores)` by default).
 
@@ -37,6 +37,10 @@ Each release lists its changes under these headings, in this order, leaving out 
 - `ume.testing.simulate_accounts(heavy_tail=...)`: heavy-tailed clusters, and calibration scenarios `running`, `small-strata` and `heavy-tails`.
 
 - Every public input is documented (name, type, purpose); `scripts/check_docstrings.py` enforces it in `make lint`. Every test file and test states its purpose and oracle.
+
+- A Benchmarks page in the docs, rendered from `benchmarks/results/benchmarks.json`: every step at 1M accounts (time at 1 and 4 threads, peak and per-step memory), the criterion kernels, and the Python API. `make bench-results` measures; `make bench-page` measures and re-renders the page.
+
+- Printed output uses descriptive labels instead of math symbols: "clusters", "propensity", "compliance rate", "compliers' mean". The math and the code names (`G_h`, `e_hat`, `pi_C`, `x_C`) are unchanged.
 
 ### Performance
 

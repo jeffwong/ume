@@ -83,12 +83,12 @@ e = ume.Effect(exp.design.metrics[0])
 }
 ```
 
-## The linearized standard error
+## The influence standard error
 
 The bootstrap's first-order expansion has a closed form from the compressed rows: $\sum_h g_h^\top(\sum v_a v_a^\top)g_h$, with $g_h$ the gradient of the effect with respect to stratum $h$'s sums. Unlike the sandwich, it moves $\hat e$ and $\bar x_C$, so it tracks the posterior SD:
 
 ```{python}
-fit.effects(se="linearized")
+fit.effects(se="influence")
 ```
 
 ## Many covariates: two passes, no second moments
@@ -96,5 +96,5 @@ fit.effects(se="linearized")
 The compressed rows grow like $k^4$ with the number of covariates. When the effects are known in advance, `exp.effects()` gives the same estimates and standard errors in two passes over the rows, keeping only $H(1+q)$ numbers and one per effect:
 
 ```{python}
-exp.effects(se="linearized")
+exp.effects(se="influence")
 ```

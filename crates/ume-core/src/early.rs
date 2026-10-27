@@ -16,7 +16,7 @@
 //!
 //! - the **sandwich**: $c_h = \big(0,\ C_h^\top (I_o \otimes A^{-1})^\top g\big)$, with $g$ the
 //!   gradient of the effect with respect to $\text{vec}(\hat\beta)$ ([`sandwich_projection`]);
-//! - the **linearized** SE: $c_h$ is the gradient of the effect with respect to the
+//! - the **influence** SE: $c_h$ is the gradient of the effect with respect to the
 //!   stratum's sums $\sum_a \xi_a v_a$ at $\xi = 1$, which also moves $\hat e$ and $\bar x_C$.
 
 use faer::linalg::solvers::DenseSolveCore;

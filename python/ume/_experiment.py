@@ -211,7 +211,7 @@ class Experiment:
             Defaults to the difference and the relative effect of every metric.
         at : mapping, optional
             A segment to read the effects at.
-        se : {"sandwich", "linearized"}
+        se : {"sandwich", "influence"}
             The standard error.
         sparse : bool or "auto"
             Dense or sparse design matrix during the passes.

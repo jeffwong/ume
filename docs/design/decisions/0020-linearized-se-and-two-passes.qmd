@@ -1,13 +1,17 @@
 ---
-title: "0020 The linearized standard error, and standard errors in two passes"
+title: "0020 The influence standard error, and standard errors in two passes"
 date: 2026-10-18
-status: accepted
+status: accepted (option renamed by 0023)
 basis: evidence
 ---
 
+::: {.callout-note}
+This standard error was first called `"linearized"` (as in the handoff); [0023](0023-influence-se-name.qmd) renamed the option to `"influence"`.
+:::
+
 ## Decisions
 
-1. **`se="linearized"`** is available on every fit. It is the first-order expansion of the bootstrap in the per-stratum sums, so it includes the uncertainty in $\hat e$ and $\bar x_C$ that the sandwich holds fixed.
+1. **`se="influence"`** is available on every fit. It is the first-order expansion of the bootstrap in the per-stratum sums, so it includes the uncertainty in $\hat e$ and $\bar x_C$ that the sandwich holds fixed.
 2. **`exp.effects(se=...)`** computes either standard error in two passes over the rows, without second moments (delta vectors early).
 
 The default stays `"sandwich"` ([0012](0012-default-se-sandwich.qmd)); revisit it with the calibration results.
@@ -29,12 +33,12 @@ This is an influence-function (CR0-type) variance. The sandwich is the special c
 **Two passes.** Both standard errors have the form $\sum_a (c_h^\top v_a)^2$:
 
 - sandwich: $c_h = (0, C_h^\top (I_o\otimes A^{-1})^\top g_\beta)$;
-- linearized: $c_h = g_h$.
+- influence: $c_h = g_h$.
 
 Pass 1 ([`FirstMomentsFold`](../../rust/ume_core/early/struct.FirstMomentsFold.html)) gives $(G_h, \sum u_a)$, hence the estimate and every $c_h$. Pass 2 ([`ScoreFold`](../../rust/ume_core/early/struct.ScoreFold.html)) adds $(c_h^\top v_a)^2$. Storage is $H(1+q)$ numbers and one per effect, instead of $H(1+q)^2$.
 
 ## Evidence
 
-- **Exact special case.** With no covariates and no cohort, nothing but $\hat\beta$ moves, so the linearized SE must equal the sandwich. It does, to 1e-6 relative, with and without encouragement and clusters (`test_linearized_equals_sandwich_when_nothing_else_moves`).
-- **Tracks the Bayesian bootstrap.** In the running example (20,000 accounts), the LATE's SE is 0.05926 (sandwich), 0.05988 (linearized) and 0.0601 (Bayesian bootstrap, 4,000 draws). The handoff's research found 0.0585 (linearized) against 0.0583 (bootstrap).
-- **Invariant 8.** Two passes equal the compressed fit in all 16 designs: estimates to 1e-10, sandwich SEs to about 1e-14 relative, linearized SEs to about 1e-10 relative (central-difference rounding).
+- **Exact special case.** With no covariates and no cohort, nothing but $\hat\beta$ moves, so the influence SE must equal the sandwich. It does, to 1e-6 relative, with and without encouragement and clusters (`test_influence_equals_sandwich_when_nothing_else_moves`).
+- **Tracks the Bayesian bootstrap.** In the running example (20,000 accounts), the LATE's SE is 0.05926 (sandwich), 0.05988 (influence) and 0.0601 (Bayesian bootstrap, 4,000 draws). The handoff's research found 0.0585 (its "linearized" SE) against 0.0583 (bootstrap).
+- **Invariant 8.** Two passes equal the compressed fit in all 16 designs: estimates to 1e-10, sandwich SEs to about 1e-14 relative, influence SEs to about 1e-10 relative (central-difference rounding).

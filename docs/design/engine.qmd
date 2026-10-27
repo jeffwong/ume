@@ -37,7 +37,7 @@ The one data-driven branch is the compliers' mean without encouragement, which u
 | `Pass<F: Fold>` | the one-pass loop (buffer and flush), generic over what a flush does | `Compressor` (`MomentsFold`), `BootstrapCompressor` (`DrawsFold`) |
 | `Stream` (Philox4x64-10), `Weights` | weights as pure functions of (seed, cluster, draw): Exp(1), Poisson(1), multinomial | the exact bootstrap |
 | `strata_blocks`, `point` | per-stratum totals → propensities, $w_h$, blocks; blocks → $\hat\beta$, compliers | the compressed fit and every draw |
-| `gaussian_sums`, `fit_draws` | draws of each stratum's sum from its compressed row; every draw's fit | `cd.posterior()`, `exp.bootstrap()`, the linearized SE |
+| `gaussian_sums`, `fit_draws` | draws of each stratum's sum from its compressed row; every draw's fit | `cd.posterior()`, `exp.bootstrap()`, the influence SE |
 | `Merge`, `ParallelPass` | folds over disjoint clusters add; any pass on threads, clusters routed by key hash | every pass |
 | `FirstMomentsFold`, `ScoreFold`, `sandwich_projection` | delta vectors early: pass 1 $(G_h, \sum u_a)$, pass 2 $\sum_a (c_h^\top v_a)^2$ | `exp.effects()` |
 
@@ -78,7 +78,7 @@ With $\xi \equiv 1$ the exact engine reproduces the point estimate exactly (`tes
 | standard error | $\psi_a$ | from |
 |---|---|---|
 | sandwich | $g_\beta^\top (I \otimes A^{-1}) s_a$ | $\sum uu^\top$ (`fit.effects()`), or two passes (`exp.effects()`) |
-| linearized | $g_h^\top v_a$, $g_h = \partial\tau/\partial\theta_h$ through `fit_draws` | $\sum vv^\top$, or two passes |
+| influence | $g_h^\top v_a$, $g_h = \partial\tau/\partial\theta_h$ through `fit_draws` | $\sum vv^\top$, or two passes |
 | bootstrap | the draws themselves, $\sum_a (\xi_a - 1)\psi_a$ to first order | `exp.bootstrap()`, `cd.posterior()` |
 
 The one-pass loop has four folds now: moments, draws, first moments and scores. Every fold merges, which is what makes shards, saved files and threads the same mechanism. Each is a few lines; the buffer, the contiguity checks and the row handling are shared.

@@ -1,0 +1,183 @@
+{
+  "measured": "2026-10-18 22:38",
+  "machine": {
+    "platform": "macOS-15.1-arm64-arm-64bit",
+    "processor": "Apple M4",
+    "cores": 10,
+    "python": "3.12.15"
+  },
+  "ume": "0.1.0",
+  "commit": "3b26bba",
+  "dirty": true,
+  "rust": [
+    {
+      "group": "compress/20k rows, 50-level categorical",
+      "function": "dense",
+      "mean_s": 0.021315921406323157,
+      "low_s": 0.02082489017713309,
+      "high_s": 0.021882369030321227
+    },
+    {
+      "group": "compress/20k rows, 50-level categorical",
+      "function": "sparse",
+      "mean_s": 0.019486841716550712,
+      "low_s": 0.019385955250039198,
+      "high_s": 0.01959344748256104
+    },
+    {
+      "group": "fit/20k rows, 50-level categorical",
+      "function": "dense",
+      "mean_s": 0.43003883335000004,
+      "low_s": 0.42326049628249995,
+      "high_s": 0.44191509795
+    },
+    {
+      "group": "fit/20k rows, 50-level categorical",
+      "function": "sparse",
+      "mean_s": 0.2789827812,
+      "low_s": 0.26799576083125,
+      "high_s": 0.29166022472750003
+    }
+  ],
+  "python": [
+    {
+      "name": "test_fit_time",
+      "mean_s": 0.02190413880938043,
+      "stddev_s": 0.0007681345745528947,
+      "rounds": 24
+    },
+    {
+      "name": "test_compress_time",
+      "mean_s": 0.006744293020228329,
+      "stddev_s": 0.0002446541842335096,
+      "rounds": 92
+    },
+    {
+      "name": "test_fit_compressed_time",
+      "mean_s": 0.000812407212747711,
+      "stddev_s": 5.9484782620728845e-05,
+      "rounds": 981
+    }
+  ],
+  "scale": {
+    "meta": {
+      "accounts": 1000000,
+      "draws": 1000,
+      "rows": 2190070
+    },
+    "results": [
+      {
+        "step": "baseline",
+        "threads": 1,
+        "seconds": 1.2479722499847412e-07,
+        "peak_rss_bytes": 619905024,
+        "rows": 2190070,
+        "description": "simulate and annotate the rows (not timed)"
+      },
+      {
+        "step": "fit_rows",
+        "threads": 1,
+        "seconds": 1.3434256659820676,
+        "peak_rss_bytes": 1815789568,
+        "rows": 2190070,
+        "description": "fit the universal model on the rows"
+      },
+      {
+        "step": "compress",
+        "threads": 1,
+        "seconds": 0.7249826258048415,
+        "peak_rss_bytes": 887275520,
+        "rows": 2190070,
+        "description": "one compression pass"
+      },
+      {
+        "step": "fit_compressed",
+        "threads": 1,
+        "seconds": 0.0012092497199773788,
+        "peak_rss_bytes": 881197056,
+        "rows": 2190070,
+        "description": "fit from the compressed data (memory includes the compression before it)"
+      },
+      {
+        "step": "gaussian_posterior",
+        "threads": 1,
+        "seconds": 0.7338498327881098,
+        "peak_rss_bytes": 899891200,
+        "rows": 2190070,
+        "description": "compress, then B Gaussian posterior draws"
+      },
+      {
+        "step": "exact_bootstrap",
+        "threads": 1,
+        "seconds": 11.198685209266841,
+        "peak_rss_bytes": 867500032,
+        "rows": 2190070,
+        "description": "exact Bayesian bootstrap, B draws, one pass"
+      },
+      {
+        "step": "two_pass_effects",
+        "threads": 1,
+        "seconds": 0.5819551674649119,
+        "peak_rss_bytes": 897548288,
+        "rows": 2190070,
+        "description": "influence standard errors in two passes"
+      },
+      {
+        "step": "baseline",
+        "threads": 4,
+        "seconds": 4.0978193283081055e-08,
+        "peak_rss_bytes": 628228096,
+        "rows": 2190070,
+        "description": "simulate and annotate the rows (not timed)"
+      },
+      {
+        "step": "fit_rows",
+        "threads": 4,
+        "seconds": 1.2809265423566103,
+        "peak_rss_bytes": 1836957696,
+        "rows": 2190070,
+        "description": "fit the universal model on the rows"
+      },
+      {
+        "step": "compress",
+        "threads": 4,
+        "seconds": 0.35825804248452187,
+        "peak_rss_bytes": 897286144,
+        "rows": 2190070,
+        "description": "one compression pass"
+      },
+      {
+        "step": "fit_compressed",
+        "threads": 4,
+        "seconds": 0.0013779578730463982,
+        "peak_rss_bytes": 883654656,
+        "rows": 2190070,
+        "description": "fit from the compressed data (memory includes the compression before it)"
+      },
+      {
+        "step": "gaussian_posterior",
+        "threads": 4,
+        "seconds": 0.37420500069856644,
+        "peak_rss_bytes": 920076288,
+        "rows": 2190070,
+        "description": "compress, then B Gaussian posterior draws"
+      },
+      {
+        "step": "exact_bootstrap",
+        "threads": 4,
+        "seconds": 3.327131667174399,
+        "peak_rss_bytes": 915259392,
+        "rows": 2190070,
+        "description": "exact Bayesian bootstrap, B draws, one pass"
+      },
+      {
+        "step": "two_pass_effects",
+        "threads": 4,
+        "seconds": 0.3781011663377285,
+        "peak_rss_bytes": 908558336,
+        "rows": 2190070,
+        "description": "influence standard errors in two passes"
+      }
+    ]
+  }
+}

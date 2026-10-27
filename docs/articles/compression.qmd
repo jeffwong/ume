@@ -15,6 +15,12 @@ import ume
 from ume.testing import simulate_accounts
 
 df = simulate_accounts(20_000, seed=2026)
+df.head()
+```
+
+Each row is one profile of an account. The account is the cluster; `Z` is the prompt, randomized per account with a propensity that ramps by `day`; `T` is whether the profile turned the setting on; `x1`, `x2`, `kids` and `device` are covariates measured before the experiment; `y` (hours), `N` (rebuffers) and `D` (plays) are the outcomes. `complier` is known only because the data is simulated; the analysis never uses it. The 20,000 accounts have about 43,500 rows. We annotate them and compress them in one pass:
+
+```{python}
 exp = ume.annotate(
     df,
     cluster="account",
@@ -37,10 +43,25 @@ row = cd[ume.Stratum(Z=1, cohort=1)]
 row
 ```
 
-Its first moments are the three blocks, summed over the stratum's clusters. $S_{00}$ counts rows, and the indicator columns of a categorical hold counts by level:
+Its first moments are three blocks, each summed over the stratum's clusters, with $R = (1, x - x_{ref})$ the row of the design matrix.
+
+$S^Y = \sum R^\top Y$ holds each outcome column summed (row `1`) and summed times each centered covariate. Here the outcomes are hours $y$, rebuffers $N$, plays $D$, and their $T \cdot$ versions:
 
 ```{python}
-row.blocks()["S"]
+blocks = row.blocks()
+blocks["S^Y"]
+```
+
+$S = \sum R^\top R$ holds the number of rows ($S_{00}$), the sum of each centered covariate, and the sums of products of covariate pairs. The indicator columns of a categorical hold counts by level, and two levels of the same categorical never share a row, so their product is 0:
+
+```{python}
+blocks["S"]
+```
+
+$S^T = \sum T\, R^\top R$ is the same sum over the rows that took the treatment. Its $S^T_{00}$ is the number of treated rows, so $S^T_{00} / S_{00}$ is the stratum's take-up:
+
+```{python}
+blocks["S^T"]
 ```
 
 ## The same fit

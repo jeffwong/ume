@@ -1,4 +1,4 @@
-.PHONY: bench-save bench-compare release-check release-publish docs-articles dev build test test-rust test-python lint fmt docs docs-preview bench bench-rust bench-python bench-memory
+.PHONY: bench-results bench-page bench-save bench-compare release-check release-publish docs-articles dev build test test-rust test-python lint fmt docs docs-preview bench bench-rust bench-python bench-memory
 
 dev:           ## Create .venv, install all dependency groups, build the extension
 	uv sync
@@ -48,6 +48,17 @@ bench-rust:
 
 bench-python: build
 	uv run pytest benchmarks/python -o python_files='bench_*.py' --benchmark-only
+
+bench-results: build  ## Run every benchmark; write benchmarks/results/benchmarks.json (several minutes)
+	@mkdir -p target && date +%s > target/.bench-start
+	cargo bench -p ume-core
+	uv run pytest benchmarks/python -o python_files='bench_*.py' --benchmark-only \
+		--benchmark-json=benchmarks/results/python.json
+	uv run python benchmarks/scale.py
+	uv run python benchmarks/report.py --since $$(cat target/.bench-start)
+
+bench-page: bench-results  ## Refresh the benchmark results and re-render the docs' Benchmarks page
+	cd docs && uv run quarto render benchmarks.qmd
 
 bench-save: build    ## Save a benchmark baseline (BASELINE=name, default "main")
 	cargo bench -p ume-core -- --save-baseline $(or $(BASELINE),main)

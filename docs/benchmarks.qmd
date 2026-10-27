@@ -1,0 +1,111 @@
+---
+title: "Benchmarks"
+description: "Time and memory of every step, from the latest benchmark run."
+jupyter: python3
+execute:
+  echo: false
+  freeze: false
+---
+
+These results are read from `benchmarks/results/benchmarks.json`, written by `make bench-results`; `make bench-page` refreshes them and re-renders this page. Benchmark a quiet machine: the numbers are wall times.
+
+```{python}
+import json
+from pathlib import Path
+
+from IPython.display import Markdown, display
+
+from ume import Table
+
+path = Path("..") / "benchmarks" / "results" / "benchmarks.json"
+report = json.loads(path.read_text()) if path.exists() else None
+
+
+def seconds(s):
+    """A duration in the most readable unit."""
+    if s >= 1:
+        return f"{s:.2f} s"
+    if s >= 1e-3:
+        return f"{s * 1e3:.1f} ms"
+    if s >= 1e-6:
+        return f"{s * 1e6:.1f} µs"
+    return f"{s * 1e9:.0f} ns"
+
+
+if report is None:
+    display(Markdown("**No results yet.** Run `make bench-page` to measure and render them."))
+else:
+    m = report["machine"]
+    state = " (uncommitted changes)" if report["dirty"] else ""
+    display(Markdown(
+        f"Measured {report['measured']} with ume {report['ume']} at commit `{report['commit']}`{state}, "
+        f"on {m['processor']}, {m['cores']} cores, {m['platform']}, Python {m['python']}."
+    ))
+```
+
+## At production scale
+
+The running example at the handoff's reference scale. Each step runs in a fresh process; *peak memory* is the process's peak resident memory, Rust's allocations included, and *step memory* subtracts the baseline (the simulated rows themselves).
+
+```{python}
+if report and report["scale"]:
+    meta, results = report["scale"]["meta"], report["scale"]["results"]
+    display(Markdown(
+        f"{meta['accounts']:,} accounts, {meta['rows']:,} rows, $k = 5$ covariate columns, "
+        f"$o = 6$ outcome columns, $B = {meta['draws']:,}$ draws."
+    ))
+    threads = sorted({r["threads"] for r in results})
+    by = {(r["step"], r["threads"]): r for r in results}
+    baseline = {t: by[("baseline", t)]["peak_rss_bytes"] for t in threads}
+    steps = [r["step"] for r in results if r["threads"] == threads[0] and r["step"] != "baseline"]
+    rows = []
+    for step in steps:
+        row = [by[(step, threads[0])]["description"]]
+        row += [seconds(by[(step, t)]["seconds"]) for t in threads]
+        if len(threads) > 1:
+            row.append(f"{by[(step, threads[0])]['seconds'] / by[(step, threads[-1])]['seconds']:.1f}×")
+        last = by[(step, threads[-1])]
+        row.append(f"{last['peak_rss_bytes'] / 2**20:,.0f} MiB")
+        row.append(f"{max(last['peak_rss_bytes'] - baseline[threads[-1]], 0) / 2**20:,.0f} MiB")
+        rows.append(row)
+    columns = ["step"] + [f"{t} thread{'s' if t > 1 else ''}" for t in threads]
+    columns += (["speedup"] if len(threads) > 1 else []) + ["peak memory", "step memory"]
+    display(Table(columns, rows))
+    display(Markdown(
+        f"Memory columns are for {threads[-1]} threads. Baseline peak (data only): "
+        f"{baseline[threads[-1]] / 2**20:,.0f} MiB. The research code's references (R + Rcpp, handoff section 7): "
+        "exact bootstrap 11.7 s, compression with 1,000 Gaussian draws 1.2 s, compression kernel 0.56 s; "
+        "see [Performance](design/performance.qmd)."
+    ))
+```
+
+## Rust kernels
+
+Criterion micro-benchmarks of `ume-core`, without Python: the mean time per call with its 95% interval.
+
+```{python}
+if report and report["rust"]:
+    rows = [[r["group"], r["function"], seconds(r["mean_s"]), f"{seconds(r['low_s'])} – {seconds(r['high_s'])}"]
+            for r in report["rust"]]
+    display(Table(["benchmark", "variant", "mean", "95% interval"], rows))
+```
+
+## Python API
+
+pytest-benchmark timings through the public API, on the running example at 20,000 accounts (about 44,000 rows).
+
+```{python}
+if report and report["python"]:
+    rows = [[r["name"], seconds(r["mean_s"]), seconds(r["stddev_s"]), r["rounds"]] for r in report["python"]]
+    display(Table(["benchmark", "mean", "std dev", "rounds"], rows))
+```
+
+## Refreshing
+
+```sh
+make bench-results   # criterion, pytest-benchmark and the scale benchmarks (several minutes)
+make bench-page      # bench-results, then re-render this page
+make docs            # the whole site; this page shows the last results written
+```
+
+The memory budgets that fail a run (`@pytest.mark.limit_memory`) are separate: `make bench-memory`. Statistical calibration is on the [Calibration](design/calibration.qmd) page.

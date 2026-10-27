@@ -29,7 +29,7 @@
       "coverage": 0.953
     },
     {
-      "method": "linearized",
+      "method": "influence",
       "effect": "LATE",
       "bias": 0.00228423858152349,
       "bias_mc_se": 0.005120082538731976,
@@ -37,7 +37,7 @@
       "coverage": 0.932
     },
     {
-      "method": "linearized",
+      "method": "influence",
       "effect": "tau_R",
       "bias": 0.00039061571188428804,
       "bias_mc_se": 0.000330336151580079,

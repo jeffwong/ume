@@ -47,7 +47,7 @@ SCENARIOS = {
     "heavy-tails": {"accounts": 20_000, "heavy_tail": 2.0},
 }
 EXACT = {"bayesian, exact": "bayesian", "poisson, exact": "poisson", "multinomial, exact": "multinomial"}
-METHODS = ["sandwich", "linearized", *EXACT, "gaussian posterior", "per row (wrong)"]
+METHODS = ["sandwich", "influence", *EXACT, "gaussian posterior", "per row (wrong)"]
 
 
 def annotate(df: object, cluster: str) -> ume.Experiment:
@@ -66,7 +66,7 @@ def replication(args: tuple[int, int, float, int]) -> dict[str, dict[str, tuple[
     effects = {name: ume.Effect(next(m for m in exp.design.metrics if m.name == metric), contrast)
                for name, (metric, contrast) in EFFECTS.items()}  # fmt: skip
     out: dict[str, dict[str, tuple[float, float, float, float]]] = {}
-    for method, se in (("sandwich", "sandwich"), ("linearized", "linearized")):
+    for method, se in (("sandwich", "sandwich"), ("influence", "influence")):
         table = fit.effects(*effects.values(), se=se)
         out[method] = {}
         for name, e in effects.items():

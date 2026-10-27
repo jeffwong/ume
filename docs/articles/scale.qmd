@@ -47,7 +47,7 @@ If the files are already grouped by cluster, `presorted=True` skips the sort. A 
 The exact bootstrap and the two-pass effects stream the same way:
 
 ```{python}
-exp.effects(se="linearized", batch_size=20_000)
+exp.effects(se="influence", batch_size=20_000)
 ```
 
 ## A stream of batches

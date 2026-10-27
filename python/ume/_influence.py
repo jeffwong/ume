@@ -1,4 +1,4 @@
-"""The linearized standard error: the bootstrap's first-order expansion.
+"""The influence standard error: the bootstrap's first-order expansion.
 
 A bootstrap draw of an effect is a smooth function of the per-stratum weighted
 sums, $\\tau(\\theta)$ with $\\theta_h = \\sum_{a \\in h} \\xi_a v_a$ and $v_a = (1, u_a)$. At
@@ -73,8 +73,8 @@ def stratum_gradients(
     weighted = design.cohort is not None
     raw = _core.fit_draws(d, o, np.ascontiguousarray(draws), z, cohort, n_cohorts, weighted, encouraged, get_threads())
     if not np.all(raw["ok"]):
-        raise ValueError("the linearized standard error is undefined: the model is degenerate near the estimate")
-    perturbed = Draws(raw, design, "linearization", "perturbation", 0)
+        raise ValueError("the influence standard error is undefined: the model is degenerate near the estimate")
+    perturbed = Draws(raw, design, "influence", "perturbation", 0)
     out = np.zeros((len(effects), h, m))
     for e, effect in enumerate(effects):
         v = perturbed.values(effect, at)
@@ -83,7 +83,7 @@ def stratum_gradients(
     return out
 
 
-def linearized_variance(
+def influence_variance(
     gradients: NDArray[np.float64], g: NDArray[np.float64], first: NDArray[np.float64], second: NDArray[np.float64]
 ) -> NDArray[np.float64]:
     """$\\sum_h g_h^\\top (\\sum_{a \\in h} v_a v_a^\\top) g_h$ for each effect, from compressed rows.
