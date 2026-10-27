@@ -65,7 +65,7 @@ def fit_rows(
     m1 = np.hstack([r, z[:, None] * r])
     m2 = np.hstack([r, t[:, None] * r])
     a = (m1 * w[:, None]).T @ m2
-    beta = np.linalg.solve(a, (m1 * w[:, None]).T @ y)
+    beta = np.asarray(np.linalg.solve(a, (m1 * w[:, None]).T @ y), dtype=np.float64)
     eps = y - m2 @ beta
     groups = np.unique(cluster, return_inverse=True)[1]
     o = y.shape[1]
@@ -189,5 +189,5 @@ def draw_rows(
         w = xi[groups] * np.where(z == 1, 1 / e_row, 1 / (1 - e_row))
     m1 = np.hstack([r, z[:, None] * r])
     m2 = np.hstack([r, t[:, None] * r])
-    beta = np.linalg.solve((m1 * w[:, None]).T @ m2, (m1 * w[:, None]).T @ y)
+    beta = np.asarray(np.linalg.solve((m1 * w[:, None]).T @ m2, (m1 * w[:, None]).T @ y), dtype=np.float64)
     return beta, complier_mean(r[:, 1:], z, t, w)

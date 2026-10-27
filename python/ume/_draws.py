@@ -88,7 +88,7 @@ class Draws:
     @property
     def x_C(self) -> NDArray[np.float64]:
         """The compliers' mean of each draw, in original units."""
-        return self._x_c + np.asarray(self.design.covariates.x_ref())
+        return np.asarray(self._x_c + np.asarray(self.design.covariates.x_ref()), dtype=np.float64)
 
     @property
     def label(self) -> str:

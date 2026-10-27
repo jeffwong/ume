@@ -105,7 +105,7 @@ def resolve_lazy(native: Any, design: Design) -> Design:
     return dataclasses.replace(design, covariates=cov)
 
 
-def _contiguous(keys: np.ndarray) -> bool:
+def _contiguous(keys: np.ndarray[Any, Any]) -> bool:
     """Whether every cluster's rows are contiguous. Sorted keys are, which is checked in O(n) first."""
     if bool(np.all(keys[1:] >= keys[:-1])):
         return True

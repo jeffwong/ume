@@ -286,6 +286,8 @@ def model_data(native: Any, design: Design, sparse: SparseOption = "auto") -> Mo
     n_clusters = int(labels.size)
     z, t, y = batch_arrays(frame, design)
     cluster_z = _constant_within(z, cluster, n_clusters, design.instrument)
+    w: NDArray[np.float64]
+    e_hat: NDArray[np.float64]
     if design.cohort is None:
         w = np.ones(z.size)
         e_hat, cohorts = np.empty(0), []
