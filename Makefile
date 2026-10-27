@@ -1,4 +1,4 @@
-.PHONY: bench-results bench-page bench-save bench-compare release-check release-publish docs-articles dev build test test-rust test-python lint fmt docs docs-preview bench bench-rust bench-python bench-memory
+.PHONY: release-version release-bump release-tag bench-results bench-page bench-save bench-compare release-check release-publish docs-articles dev build test test-rust test-python lint fmt docs docs-preview bench bench-rust bench-python bench-memory
 
 dev:           ## Create .venv, install all dependency groups, build the extension
 	uv sync
@@ -71,6 +71,18 @@ bench-compare: build ## Compare against a saved baseline; fails on a >10% mean s
 
 bench-memory: build
 	uv run pytest benchmarks/python -o python_files='bench_*.py' --memray --native --benchmark-disable
+
+release-version: ## Print the package version (Cargo.toml, the single source)
+	@uv run python scripts/release_version.py version
+
+release-bump: ## Set the version and date the changelog: make release-bump VERSION=X.Y.Z
+	@test -n "$(VERSION)" || { echo "usage: make release-bump VERSION=X.Y.Z" >&2; exit 2; }
+	uv run python scripts/release_version.py bump $(VERSION)
+	cargo update -w
+	uv lock
+
+release-tag: ## Tag HEAD v<version> after the release checks (annotated, local; push it yourself)
+	uv run python scripts/release_version.py tag
 
 release-check: ## Release stage 1: verify and build into dist/. Publishes nothing.
 	scripts/release_check.sh

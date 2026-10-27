@@ -1,0 +1,25 @@
+---
+title: "0024 A version can be tagged before it is published"
+date: 2026-10-26
+status: accepted
+basis: reasoning
+---
+
+## Decision
+
+`make release-tag` creates the annotated tag `vX.Y.Z` at HEAD, locally, after `scripts/release_version.py check` passes on a clean tree. It never pushes. `make release-bump VERSION=X.Y.Z` prepares the release commit: it sets the version in `Cargo.toml`, dates the changelog section and updates the lock files.
+
+The tag check now accepts a tag that already points at HEAD. Stage 2 (local and GitHub) reuses such a tag instead of creating one. A tag at any other commit is still refused.
+
+This amends [0009](0009-two-stage-release.qmd): a tag now marks a source release, which may come before (or without) a PyPI upload. It no longer means "published".
+
+## Justification
+
+- Requested by Jeffrey Wong: tag v0.2.0 now. The PyPI name is still open (see the [TODO](../todo.qmd)), so publishing cannot be the only way to mark a version.
+- 0009's main guarantee is unchanged: what is uploaded is what stage 1 built, and stage 2 still checks the commit. A pre-made tag must be on that same commit, so the tag and the upload cannot disagree.
+- Tagging is local and deliberate. Pushing the tag is a separate, explicit step.
+
+## Alternatives
+
+- Keep "tag only on publish". This blocks marking 0.2.0 until the name is settled.
+- Tag in `release-bump`. This is too early, because the bump has to be reviewed and committed first.

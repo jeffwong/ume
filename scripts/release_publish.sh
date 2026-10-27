@@ -61,7 +61,8 @@ MSG
   exit 0
 fi
 
-git tag -a "v$VERSION" -m "$NAME $VERSION"
+# A source release may already be tagged at this commit (make release-tag, decision 0024).
+git rev-parse --verify --quiet "refs/tags/v$VERSION" >/dev/null || git tag -a "v$VERSION" -m "$NAME $VERSION"
 git push origin "v$VERSION"
 
 if [[ $DOCS == 1 ]]; then

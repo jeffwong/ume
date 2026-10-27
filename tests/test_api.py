@@ -16,6 +16,8 @@ check that:
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import polars as pl
@@ -41,6 +43,13 @@ def df() -> pl.DataFrame:
 def test_version_matches_extension() -> None:
     """The package version equals the compiled extension's: one version source, ``Cargo.toml``."""
     assert ume.__version__ == _core.__version__
+
+
+def test_version_is_the_cargo_version() -> None:
+    """``ume.__version__`` is the version in the root ``Cargo.toml``, the single source the release tooling sets."""
+    tomllib = pytest.importorskip("tomllib")
+    cargo = tomllib.loads((Path(__file__).resolve().parent.parent / "Cargo.toml").read_text())
+    assert ume.__version__ == cargo["workspace"]["package"]["version"]
 
 
 def test_rust_docstrings_reach_python() -> None:

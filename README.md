@@ -59,9 +59,16 @@ A release is a deliberate **two-stage** process. Stage 1 verifies and builds, an
 
 ### Before a release
 
-1. Choose the version, following [SemVer](https://semver.org) (before 1.0, a breaking change bumps the minor version). Set it in **one** place: `version` under `[workspace.package]` in the root `Cargo.toml`.
-2. In `CHANGELOG.md`, rename `## Unreleased` to `## X.Y.Z (YYYY-MM-DD)` and check its entries.
-3. Commit both changes.
+1. Choose the version, following [SemVer](https://semver.org) (before 1.0, a breaking change bumps the minor version). It lives in **one** place, `version` under `[workspace.package]` in the root `Cargo.toml`; `ume.__version__` and the wheel both read it.
+2. `make release-bump VERSION=X.Y.Z` sets it, renames `## Unreleased` in `CHANGELOG.md` to `## X.Y.Z (YYYY-MM-DD)` (opening an empty `## Unreleased`), and updates the lock files. Check the changelog's entries.
+3. Commit the changes.
+4. Optionally, `make release-tag` tags the commit `vX.Y.Z` (annotated, after the version, changelog and tag checks). It does not push: `git push origin vX.Y.Z`. Publishing later reuses this tag if it points at the commit being released.
+
+```sh
+make release-version                            # print the current version
+make release-bump VERSION=0.3.0                 # set it and date the changelog
+make release-tag                                # tag HEAD v0.3.0 (local)
+```
 
 ### On GitHub (recommended: builds wheels for every platform)
 

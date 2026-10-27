@@ -174,8 +174,13 @@ jobs:
       - run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -a "v${{ needs.verify.outputs.version }}" -m "ume ${{ needs.verify.outputs.version }}"
-          git push origin "v${{ needs.verify.outputs.version }}"
+          # A source release may already be tagged at this commit (decision 0024).
+          git fetch --tags
+          v="v${{ needs.verify.outputs.version }}"
+          if ! git rev-parse --verify --quiet "refs/tags/$v" >/dev/null; then
+            git tag -a "$v" -m "ume ${{ needs.verify.outputs.version }}"
+            git push origin "$v"
+          fi
 
   docs:
     needs: tag

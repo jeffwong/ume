@@ -1,0 +1,39 @@
+# Rust
+/target/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+.venv/
+build/
+dist/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Docs (generated; docs/_freeze is committed)
+/docs/_site/
+/docs/.quarto/
+/docs/reference/
+/docs/objects.json
+/docs/**/*.quarto_ipynb
+
+# Benchmarks
+.benchmarks/
+memray-*.bin
+
+# Release builds
+/dist/
+
+# AI
+prompts.md
+CLAUDE.md

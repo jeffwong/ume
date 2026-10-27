@@ -5,12 +5,19 @@ Usage
 python scripts/release_version.py version   # print the package version
 python scripts/release_version.py name      # print the distribution name
 python scripts/release_version.py check     # fail unless the release is consistent
+python scripts/release_version.py bump X.Y.Z  # set the version, date the changelog section
+python scripts/release_version.py tag       # tag HEAD v<version> (annotated, local only)
 
 ``check`` verifies that
 
 1. the version in ``Cargo.toml`` (the single source, decision 0003) is valid SemVer,
 2. ``CHANGELOG.md`` has a ``## <version>`` section and no leftover ``## Unreleased`` content,
-3. the tag ``v<version>`` does not exist yet, locally or on ``origin``.
+3. the tag ``v<version>`` does not exist yet, locally or on ``origin``, or already points at
+   ``HEAD`` (a source release tagged before publishing, decision 0024).
+
+``bump`` writes the version into ``Cargo.toml``, renames ``## Unreleased`` to
+``## X.Y.Z (YYYY-MM-DD)`` and opens an empty ``## Unreleased`` above it. ``tag``
+refuses a dirty tree or a failing ``check``, and never pushes.
 """
 
 from __future__ import annotations
@@ -18,6 +25,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import time
 import tomllib
 from pathlib import Path
 
@@ -49,14 +57,64 @@ def changelog_errors(v: str) -> list[str]:
     return errors
 
 
+def git(*args: str) -> str:
+    """Run git in the repository root and return its stripped standard output ("" on failure)."""
+    return subprocess.run(["git", *args], capture_output=True, text=True, cwd=ROOT).stdout.strip()
+
+
 def tag_errors(v: str) -> list[str]:
-    """Return an error if tag ``v<version>`` already exists locally or on origin."""
+    """Return an error if tag ``v<version>`` exists, locally or on origin, at a commit other than HEAD."""
     tag = f"v{v}"
-    local = subprocess.run(["git", "tag", "--list", tag], capture_output=True, text=True, cwd=ROOT).stdout.strip()
-    remote = subprocess.run(
-        ["git", "ls-remote", "--tags", "origin", f"refs/tags/{tag}"], capture_output=True, text=True, cwd=ROOT
-    ).stdout.strip()
-    return [f"Tag {tag} already exists. Bump the version in Cargo.toml."] if local or remote else []
+    head = git("rev-parse", "HEAD")
+    local = git("rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}")
+    remote = git("ls-remote", "--tags", "origin", f"refs/tags/{tag}^{{}}", f"refs/tags/{tag}").split()
+    remote_commit = remote[-2] if remote else ""
+    moved = [c for c in (local, remote_commit) if c and c != head]
+    return [f"Tag {tag} already exists at another commit. Bump the version in Cargo.toml."] if moved else []
+
+
+def bump(v: str) -> int:
+    """Set the version in ``Cargo.toml`` and date the changelog's Unreleased section as ``v``."""
+    if not SEMVER.match(v):
+        print(f"error: {v!r} is not SemVer (X.Y.Z).", file=sys.stderr)
+        return 1
+    cargo = ROOT / "Cargo.toml"
+    text, n = re.subn(
+        r'(\[workspace\.package\][^\[]*?^version\s*=\s*)"[^"]*"', rf'\g<1>"{v}"', cargo.read_text(),
+        count=1, flags=re.MULTILINE | re.DOTALL,
+    )  # fmt: skip
+    if n != 1:
+        print("error: no version under [workspace.package] in Cargo.toml.", file=sys.stderr)
+        return 1
+    changelog = ROOT / "CHANGELOG.md"
+    log = changelog.read_text()
+    if not re.search(r"^## Unreleased[ \t]*$", log, flags=re.MULTILINE):
+        print("error: CHANGELOG.md has no '## Unreleased' section.", file=sys.stderr)
+        return 1
+    log = re.sub(
+        r"^## Unreleased[ \t]*$", f"## Unreleased\n\n## {v} ({time.strftime('%Y-%m-%d')})", log, count=1,
+        flags=re.MULTILINE,
+    )  # fmt: skip
+    cargo.write_text(text)
+    changelog.write_text(log)
+    print(f"Version {v} in Cargo.toml; CHANGELOG.md section '## {v}' dated today. Review, rebuild, commit.")
+    return 0
+
+
+def tag() -> int:
+    """Create the annotated tag ``v<version>`` at HEAD after the release checks; never push."""
+    v = version()
+    if git("status", "--porcelain"):
+        print("error: uncommitted changes. Commit the release first.", file=sys.stderr)
+        return 1
+    if check():
+        return 1
+    if git("tag", "--list", f"v{v}"):
+        print(f"Tag v{v} already points at HEAD.")
+        return 0
+    subprocess.run(["git", "tag", "-a", f"v{v}", "-m", f"{name()} {v}"], cwd=ROOT, check=True)
+    print(f"Tagged v{v} at {git('rev-parse', '--short', 'HEAD')}. Push it with: git push origin v{v}")
+    return 0
 
 
 def check() -> int:
@@ -79,5 +137,9 @@ if __name__ == "__main__":
         print(name())
     elif command == "check":
         sys.exit(check())
+    elif command == "bump" and len(sys.argv) == 3:
+        sys.exit(bump(sys.argv[2]))
+    elif command == "tag":
+        sys.exit(tag())
     else:
-        sys.exit(f"unknown command {command!r}; use version, name or check")
+        sys.exit(f"unknown command {command!r}; use version, name, check, bump X.Y.Z or tag")

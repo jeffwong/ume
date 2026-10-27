@@ -1,7 +1,7 @@
 ---
 title: "0009 Two-stage release: verify and build, then a gated publish"
 date: 2026-10-18
-status: accepted
+status: accepted (tagging amended by 0024)
 basis: reasoning
 ---
 
